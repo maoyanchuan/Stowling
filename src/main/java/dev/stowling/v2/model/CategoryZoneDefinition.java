@@ -60,20 +60,10 @@ public record CategoryZoneDefinition(
             // Apply saved UI allocation on load, including alpha.282's full-box-only policies.
             policy = effective.storagePolicy(policy);
         }
-        AreaBounds previous = binding.standingArea();
-        AreaBounds feet = previous;
-        if (Boolean.TRUE.equals(effective.specifyStanding())) {
-            feet = effective.standingArea(null);
-            if (previous != null) {
-                // Repair saved heights without undoing horizontal slice expansion.
-                feet = new AreaBounds(previous.firstX(), feet.firstY(), previous.firstZ(),
-                        previous.secondX(), feet.secondY(), previous.secondZ());
-            }
-        }
-        if (Objects.equals(feet, previous) && policy.equals(binding.storagePolicy())) return binding;
+        if (policy.equals(binding.storagePolicy())) return binding;
         return new CategoryBindingDefinition(binding.id(), binding.markerArea(),
                 binding.storageArea(), binding.ruleId(), binding.ignoredMarkerBlockIds(),
-                binding.containerOverrides(), feet, policy,
+                binding.containerOverrides(), binding.standingArea(), policy,
                 binding.wholeStorage(), binding.name(), binding.optionsEnabled(),
                 binding.categoryOptions(), binding.standingPlan());
     }

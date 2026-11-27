@@ -9,7 +9,7 @@ import java.util.Set;
 public interface CategoryZonePort {
     default CategoryZoneResult resolve(CategoryZoneDefinition zone, Set<String> containerTypes,
             int maxVolume, Map<BlockPosition, Set<String>> contents,
-            Set<CategoryMarkerSource> sources, boolean standingSubregionsEnabled) {
+            Set<CategoryMarkerSource> sources, boolean classificationTask) {
         return sources == null ? resolve(zone, containerTypes, maxVolume, contents)
                 : resolve(zone, containerTypes, maxVolume, contents, sources);
     }

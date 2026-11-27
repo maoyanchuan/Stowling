@@ -9,10 +9,7 @@
     /** @param {object} binding @returns {object} */
     function draft(binding) {
         if (binding.standingPlan) return copy(binding.standingPlan);
-        const legacy = binding.original?.standingArea;
-        return {enabled: Boolean(legacy), points: legacy ? [{position: {
-            x: legacy.firstX, y: legacy.firstY - 1, z: legacy.firstZ
-        }, markerArea: null, storageArea: null, expanded: false}] : []};
+        return {enabled: false, points: []};
     }
 
     /** @param {string} tag @param {string} className @param {string} [text]
@@ -76,8 +73,7 @@
         const add = element("button", "ghost category-standing-add", "添加站立坐标");
         add.type = "button";
         body.append(note, list, add);
-        root.append(row, body, element("p", "settings-description",
-            "需在分类任务的实验性设置中开启“分类多站位与子区绑定”；关闭实验时沿用原流程。"));
+        root.append(row, body);
         let expanded = false;
         let sequence = 0;
 

@@ -18,7 +18,7 @@ class CategoryStandingSubregionsTest {
     private static final AreaBounds BASELINE = new AreaBounds(2, 65, 0, 2, 65, 0);
 
     @Test
-    void disabledExperimentKeepsOriginalBindingsAndTheLegacyStance() {
+    void ordinaryConsumersKeepTheirOriginalBindingsAndLegacyStance() {
         var zone = zone(plan(true), false);
         var result = CategoryStandingSubregions.segments(zone, false);
         assertEquals(1, result.size());
@@ -27,7 +27,7 @@ class CategoryStandingSubregionsTest {
     }
 
     @Test
-    void enabledExperimentPairsEachStoragePartWithItsFiveBlockSeparatedStance() {
+    void classificationBaselinePairsEachStoragePartWithItsFiveBlockSeparatedStance() {
         var zone = zone(plan(true), false);
         var result = CategoryStandingSubregions.segments(zone, true);
         assertEquals(2, result.size());
@@ -78,7 +78,7 @@ class CategoryStandingSubregionsTest {
     }
 
     @Test
-    void disablingStandingRemovesItsConstraintOnlyWithinTheExperiment() {
+    void disablingStandingRemovesItsConstraintFromTheClassificationBaseline() {
         var zone = zone(plan(false), false);
         assertNull(CategoryStandingSubregions.segments(zone, true)
                 .getFirst().binding().standingArea());
@@ -118,32 +118,17 @@ class CategoryStandingSubregionsTest {
     }
 
     @Test
-    void ordinaryTasksCannotActivateTheExperimentThroughSharedWorkspaceState() {
+    void runKindSelectsTheClassificationBaselineWithoutAnExecutionSwitch() {
         var workspace = new TaskRunWorkspace();
-        workspace.configureStandingSubregions(true);
-        assertFalse(workspace.standingSubregionsEnabled());
+        var zone = zone(plan(true), false);
+        assertEquals(1, CategoryStandingSubregions.segments(zone,
+                workspace.classificationTask()).size());
         workspace.configureClassificationTask(true);
-        workspace.configureStandingSubregions(true);
-        assertTrue(workspace.standingSubregionsEnabled());
+        assertEquals(2, CategoryStandingSubregions.segments(zone,
+                workspace.classificationTask()).size());
         workspace.configureClassificationTask(false);
-        assertFalse(workspace.standingSubregionsEnabled());
-    }
-
-    @Test
-    void persistedTaskFlagDefaultsOffAndOnlyIndependentClassificationAcceptsIt() {
-        var gson = new com.google.gson.Gson();
-        var definition = new AutoClassifyDefinition(UUID.randomUUID(), "分类", false, true, true,
-                "coordinate:" + UUID.randomUUID(), null, "region:" + UUID.randomUUID(),
-                List.of(new AutoClassifyAreaDefinition("category-zone:" + UUID.randomUUID())),
-                TaskPriority.NORMAL);
-        assertFalse(definition.standingSubregionsEnabled());
-        var json = gson.toJsonTree(definition).getAsJsonObject();
-        json.addProperty("standingSubregionsEnabled", true);
-        assertFalse(gson.fromJson(json, AutoClassifyDefinition.class).standingSubregionsEnabled());
-        json.addProperty("kind", "CLASSIFICATION");
-        assertTrue(gson.fromJson(json, AutoClassifyDefinition.class).standingSubregionsEnabled());
-        json.remove("standingSubregionsEnabled");
-        assertFalse(gson.fromJson(json, AutoClassifyDefinition.class).standingSubregionsEnabled());
+        assertEquals(1, CategoryStandingSubregions.segments(zone,
+                workspace.classificationTask()).size());
     }
 
     private static CategoryStandingPlan plan(boolean enabled) {

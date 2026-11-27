@@ -8,7 +8,8 @@ import dev.stowling.automation.WorldObservation;
 import dev.stowling.domain.BlockPosition;
 import dev.stowling.navigation.NavigationService;
 import dev.stowling.v2.model.AreaBounds;
-import dev.stowling.v2.model.CategoryZoneOptions;
+import dev.stowling.v2.model.CategoryStandingPoint;
+import dev.stowling.v2.model.CategoryPositionDraft;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
@@ -41,8 +42,8 @@ class BaritoneAutomationNavigationTest {
 
     @Test
     void supportBlockConfigurationArrivesOnlyAboveTheBlockAndWithinContainerReach() {
-        var options = new CategoryZoneOptions("selection", "marker", "bulk", "inside-box",
-                "", false, "", true, new BlockPosition(1, 64, 0));
+        var point = new CategoryStandingPoint(new CategoryPositionDraft(1, 64, 0),
+                null, null, false);
         RecordingNavigationService service = new RecordingNavigationService();
         service.navigating = true;
         service.withinInteractionRange = true;
@@ -51,14 +52,14 @@ class BaritoneAutomationNavigationTest {
         BlockPosition chest = new BlockPosition(0, 68, 0);
 
         assertEquals(NavigationStatus.NAVIGATING,
-                navigation.startInteraction(chest, options.standingArea(null)));
+                navigation.startInteraction(chest, point.feetArea()));
         assertEquals(new AreaBounds(1, 65, 0, 1, 65, 0), service.standingArea);
         player.set(new BlockPosition(1, 65, 0));
         service.withinInteractionRange = false;
         assertEquals(NavigationStatus.NAVIGATING, navigation.status(chest));
         service.withinInteractionRange = true;
         assertEquals(NavigationStatus.ARRIVED, navigation.status(chest));
-        assertEquals(new BlockPosition(1, 64, 0), options.standingPosition());
+        assertEquals(new BlockPosition(1, 64, 0), point.position().blockPosition());
     }
 
     @Test

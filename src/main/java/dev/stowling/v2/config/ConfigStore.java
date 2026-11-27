@@ -319,13 +319,12 @@ public final class ConfigStore {
         allowed.add("cachePolicy");
         allowed.add("remainderPolicy");
         allowed.add("robotWarehouseMixedBoxes");
-        allowed.add("standingSubregionsEnabled");
         JsonArray definitions = requireArray(value, "autoClassifyTasks");
         for (int index = 0; index < definitions.size(); index++) {
             String path = "autoClassifyTasks[" + index + "]";
             JsonObject definition = requireObject(definitions.get(index), path);
             for (String retired : List.of(
-                    "foodPauseResumeEnabled",
+                    "standingSubregionsEnabled", "foodPauseResumeEnabled",
                     "unstackableZoneRoutingEnabled",
                     "sameCategoryBoxBatching",
                     "classificationBaselineEnabled",
@@ -336,11 +335,6 @@ public final class ConfigStore {
             }
 
             requireFields(definition, path, allowed, fields);
-            var standing = definition.get("standingSubregionsEnabled");
-            if (standing != null && (!standing.isJsonPrimitive()
-                    || !standing.getAsJsonPrimitive().isBoolean())) {
-                throw new V2ValidationException("多站位实验开关必须是布尔值");
-            }
             var mixed = definition.get("robotWarehouseMixedBoxes");
             if (mixed != null && (!mixed.isJsonPrimitive()
                     || !mixed.getAsJsonPrimitive().isBoolean())) {
@@ -463,6 +457,7 @@ public final class ConfigStore {
         for (int index = 0; index < zones.size(); index++) {
             String zonePath = "categoryZones[" + index + "]";
             JsonObject zone = requireObject(zones.get(index), zonePath);
+            CategoryStandingMigration.migrate(zone);
             requireFields(
                     zone,
                     zonePath,

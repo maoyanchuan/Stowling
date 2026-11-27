@@ -5,9 +5,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
-/** Explicitly opt-in execution view; saved zones and ordinary consumers stay unchanged. */
+/** Independent-classification standing baseline; other consumers retain their own contracts. */
 public final class CategoryStandingSubregions {
-    public static final String ID = "classification-standing-subregions";
+    private static final String UUID_NAMESPACE = "classification-standing-subregions";
 
     public record Segment(CategoryBindingDefinition binding, CategoryZoneOptions options,
             UUID scopeId) {
@@ -16,7 +16,7 @@ public final class CategoryStandingSubregions {
     private CategoryStandingSubregions() {
     }
 
-    public static List<Segment> segments(CategoryZoneDefinition zone, boolean enabled) {
+    public static List<Segment> segments(CategoryZoneDefinition zone, boolean classificationTask) {
         List<Segment> result = new ArrayList<>();
         for (int index = 0; index < zone.bindings().size(); index++) {
             var binding = zone.bindings().get(index);
@@ -25,7 +25,7 @@ public final class CategoryStandingSubregions {
             UUID scope = binding.optionsEnabled() ? CategoryZoneTiler.templateFor(zone, index).id()
                     : null;
             var plan = binding.standingPlan();
-            if (!enabled || plan == null) {
+            if (!classificationTask) {
                 result.add(new Segment(binding, options, scope));
             } else if (!plan.enabled()) {
                 result.add(new Segment(copy(binding, binding.id(), binding.markerArea(),
@@ -34,7 +34,8 @@ public final class CategoryStandingSubregions {
                 plan.validate(binding.markerArea(), binding.storageArea());
                 for (int pointIndex = 0; pointIndex < plan.points().size(); pointIndex++) {
                     var point = plan.points().get(pointIndex);
-                    UUID id = UUID.nameUUIDFromBytes((binding.id() + ":" + ID + ":" + pointIndex)
+                    UUID id = UUID.nameUUIDFromBytes((binding.id() + ":" + UUID_NAMESPACE
+                            + ":" + pointIndex)
                             .getBytes(StandardCharsets.UTF_8));
                     result.add(new Segment(copy(binding, id,
                             point.usesSubregions() ? point.markerArea() : binding.markerArea(),

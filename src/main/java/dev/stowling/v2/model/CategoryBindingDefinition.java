@@ -34,7 +34,9 @@ public record CategoryBindingDefinition(
         containerOverrides = containerOverrides == null
                 ? List.of()
                 : List.copyOf(containerOverrides);
-        if (standingPlan != null) standingPlan.validate(markerArea, storageArea);
+        standingPlan = standingPlan == null ? CategoryStandingPlan.fromLegacy(standingArea)
+                : standingPlan;
+        standingPlan.validate(markerArea, storageArea);
     }
 
     public CategoryBindingDefinition(UUID id, AreaBounds markerArea, AreaBounds storageArea,

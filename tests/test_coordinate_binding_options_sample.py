@@ -144,7 +144,7 @@ def test_first_enable_uses_current_global_settings(sample_page: Any) -> None:
     assert selected(card, "recognitionMode") == "container-item"
     assert card.locator('[id$="category-no-cache-row"]').is_visible()
     assert card.locator('[id$="category-bulk-stacks"]').input_value() == "18"
-    assert card.locator('[id$="category-specify-standing"]').is_hidden()
+    assert card.locator('[id$="category-specify-standing"]').count() == 0
     assert card.locator('.category-standing-plan').count() == 0
     assert page.locator('#category-standing-settings').is_visible()
 

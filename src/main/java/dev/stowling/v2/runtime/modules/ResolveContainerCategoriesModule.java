@@ -73,7 +73,7 @@ final class ResolveContainerCategoriesModule implements TaskModuleExecutor {
         Map<BlockPosition, Set<String>> markerContents = new LinkedHashMap<>();
         if (requiresContainerContents()) {
             for (var segment : dev.stowling.v2.model.CategoryStandingSubregions.segments(
-                    zone, context.workspace().standingSubregionsEnabled())) {
+                    zone, context.workspace().classificationTask())) {
                 var binding = segment.binding();
                 if (UnstackableCategoryRule.ID.equals(binding.ruleId())) {
                     continue;
@@ -96,7 +96,7 @@ final class ResolveContainerCategoriesModule implements TaskModuleExecutor {
         }
         CategoryZoneResult result = context.categoryZonesPort().resolve(zone, containerTypes,
                 maxVolume, markerContents, markerSources,
-                context.workspace().standingSubregionsEnabled());
+                context.workspace().classificationTask());
         if (!result.succeeded()) {
             return TaskModuleResult.failed(result.message());
         }

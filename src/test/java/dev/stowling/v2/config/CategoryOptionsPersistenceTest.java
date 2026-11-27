@@ -90,7 +90,7 @@ class CategoryOptionsPersistenceTest {
                 var rule = new CategoryItemBinding("Outside", type, "",
                         new CategoryPositionDraft(99, 64, 0), "minecraft:dirt", false);
                 var options = new CategoryZoneOptions("selection", "marker", "bulk", "inside-box",
-                        "", false, "", false, null, 27, false, List.of(), false,
+                        "", false, "", 27, false, List.of(), false,
                         enabled, List.of(rule));
                 var binding = new CategoryBindingDefinition(UUID.randomUUID(),
                         new AreaBounds(0, 64, 0, 0, 64, 0),
@@ -113,7 +113,7 @@ class CategoryOptionsPersistenceTest {
     void expansionKeepsAbsoluteRulesAndIndependentScopeAcrossAllGeneratedSlices() {
         var point = new CategoryPositionDraft(2, 64, 0);
         var options = new CategoryZoneOptions("single", "marker", "bulk", "inside-box",
-                "", false, "", false, null, 27, true, List.of(point), true, false, List.of());
+                "", false, "", 27, true, List.of(point), true, false, List.of());
         var template = new CategoryBindingDefinition(UUID.randomUUID(),
                 new AreaBounds(0, 64, 0, 0, 64, 0), new AreaBounds(0, 60, 0, 0, 60, 0),
                 "DIRECT_BLOCK_ID", List.of(), List.of(), null, null, false, "Group", true, options);

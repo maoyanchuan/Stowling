@@ -86,9 +86,7 @@
             ignoredMarkerPositions: copy(value.ignoredMarkerPositions || []),
             ignoreRepeatedBlocks: Boolean(value.ignoreRepeatedBlocks),
             multiItemBindingsEnabled: Boolean(value.multiItemBindingsEnabled),
-            multiItemBindings: copy(value.multiItemBindings || []),
-            specifyStanding: value.specifyStanding ?? null,
-            standingPosition: value.standingPosition ? copy(value.standingPosition) : null};
+            multiItemBindings: copy(value.multiItemBindings || [])};
     }
 
     /** @param {object} options @returns {void} */
@@ -148,10 +146,7 @@
     /** @param {object} binding @returns {object} */
     function standingDraft(binding) {
         if (binding.standingPlan) return copy(binding.standingPlan);
-        const standing = binding.standingArea;
-        return {enabled: Boolean(standing), points: standing ? [{position: {
-            x: standing.firstX, y: standing.firstY - 1, z: standing.firstZ
-        }, markerArea: null, storageArea: null, expanded: false}] : []};
+        return {enabled: false, points: []};
     }
 
     /** @param {object} bounds @param {object} child @returns {boolean} */
@@ -301,19 +296,6 @@
             if (!unstackable && options.ignoreSupportBlock
                     && !result.ignoredMarkerBlockIds.length) {
                 throw new Error("请填写要忽略的支撑方块 ID。");
-            }
-            if (options.specifyStanding != null) {
-                result.standingArea = null;
-                if (options.specifyStanding) {
-                    const position = options.standingPosition;
-                    if (!position || ["x", "y", "z"].some(axis =>
-                        !Number.isInteger(position[axis]) || position[axis] < -2147483648
-                            || position[axis] > 2147483647)) {
-                        throw new Error("请填写站立位置的 X、Y、Z 整数坐标。");
-                    }
-                    const feet = {...position, y: position.y + 1};
-                    result.standingArea = area({first: feet, second: feet});
-                }
             }
             return result;
         });

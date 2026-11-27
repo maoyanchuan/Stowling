@@ -151,7 +151,7 @@ final class MinecraftContainerCacheRefresh implements TaskModuleExecutor {
         } else {
             var zone = context.categoryZones().get(id);
             bindings = dev.stowling.v2.model.CategoryStandingSubregions.segments(zone,
-                    context.workspace().standingSubregionsEnabled()).stream()
+                    context.workspace().classificationTask()).stream()
                     .map(dev.stowling.v2.model.CategoryStandingSubregions.Segment::binding).toList();
             storageAreas = bindings.stream().map(CategoryBindingDefinition::storageArea)
                     .distinct().toList();
@@ -320,7 +320,7 @@ final class MinecraftContainerCacheRefresh implements TaskModuleExecutor {
         ContainerTarget target = ContainerCacheRefreshPlan.preferInside(found, scanAreas);
         for (var binding : bindings) {
             boolean applies = options.markerOnly()
-                    ? context.workspace().standingSubregionsEnabled()
+                    ? context.workspace().classificationTask()
                             && touches(target, List.of(binding.markerArea()))
                     : touches(target, List.of(binding.storageArea()));
             if (applies

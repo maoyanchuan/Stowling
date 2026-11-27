@@ -13,10 +13,10 @@ public final class CategoryOptionsJson {
         if (value == null || value.isJsonNull()) return;
         JsonObject options = object(value, Set.of("scopeMode", "recognitionMode", "storageMethod",
                 "noCacheLocation", "cacheDestination", "ignoreSupportBlock", "supportBlock",
-                "specifyStanding", "standingPosition", "bulkStacks", "ignoreMarkerPositions",
+                "bulkStacks", "ignoreMarkerPositions",
                 "ignoredMarkerPositions", "ignoreRepeatedBlocks", "multiItemBindingsEnabled",
                 "multiItemBindings", "unstackableOverflowRef"));
-        for (String key : Set.of("ignoreSupportBlock", "specifyStanding", "ignoreMarkerPositions",
+        for (String key : Set.of("ignoreSupportBlock", "ignoreMarkerPositions",
                 "ignoreRepeatedBlocks", "multiItemBindingsEnabled")) {
             primitive(options.get(key), "boolean");
         }
@@ -25,7 +25,6 @@ public final class CategoryOptionsJson {
             primitive(options.get(key), "string");
         }
         integer(options.get("bulkStacks"));
-        position(options.get("standingPosition"), false);
         JsonElement positions = options.get("ignoredMarkerPositions");
         if (present(positions)) {
             if (!positions.isJsonArray()) fail();

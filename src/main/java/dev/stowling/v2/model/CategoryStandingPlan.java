@@ -9,6 +9,13 @@ public record CategoryStandingPlan(boolean enabled, List<CategoryStandingPoint> 
         points = points == null ? List.of() : List.copyOf(points);
     }
 
+    public static CategoryStandingPlan fromLegacy(AreaBounds feet) {
+        if (feet == null) return new CategoryStandingPlan(false, List.of());
+        return new CategoryStandingPlan(true, List.of(new CategoryStandingPoint(
+                new CategoryPositionDraft(feet.firstX(), Math.subtractExact(feet.firstY(), 1),
+                        feet.firstZ()), null, null, false)));
+    }
+
     public void validate(AreaBounds markers, AreaBounds storage) {
         if (!enabled) return;
         if (points.isEmpty()) throw new IllegalArgumentException("请至少添加一个站立位置");

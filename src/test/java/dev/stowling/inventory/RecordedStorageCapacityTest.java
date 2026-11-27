@@ -42,7 +42,7 @@ class RecordedStorageCapacityTest {
                 List.of(new BlockPosition(1, 64, 0)), Instant.ofEpochSecond(1),
                 54, 32, 3, 1, 0, List.of(loose), List.of(full, full, full, partial));
         var options = new dev.stowling.v2.model.CategoryZoneOptions("selection", "marker",
-                "mixed", "inside-box", "", false, "", false, null, 27);
+                "mixed", "inside-box", "", false, "", 27);
         var oldPolicy = new StoragePolicy(StorageMode.MIXED, 50, false, null, false, 27, null);
         var policy = options.storagePolicy(oldPolicy);
         assertEquals(64, RecordedStorageCapacity.existingBoxSpace(stock, item, Set.of(item), 64));

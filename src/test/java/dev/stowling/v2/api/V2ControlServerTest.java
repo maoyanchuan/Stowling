@@ -286,11 +286,12 @@ class V2ControlServerTest {
                 assertEquals(standing.get("firstX"), standing.get("secondX"));
                 assertEquals(enabled ? 67 : 66, standing.get("firstY").getAsInt());
                 assertEquals(standing.get("firstY"), standing.get("secondY"));
-                assertEquals(66, binding.getAsJsonObject("categoryOptions")
-                        .getAsJsonObject("standingPosition").get("y").getAsInt());
+                assertFalse(binding.getAsJsonObject("categoryOptions").has("standingPosition"));
+                assertFalse(zone.getAsJsonObject("categoryOptions").has("specifyStanding"));
                 assertEquals(enabled ? -5 : -2, standing.get("firstZ").getAsInt());
-                assertEquals(4, binding.getAsJsonObject("categoryOptions")
-                        .getAsJsonObject("standingPosition").get("x").getAsInt());
+                assertEquals(enabled ? 4 : 1, binding.getAsJsonObject("standingPlan")
+                        .getAsJsonArray("points").get(0).getAsJsonObject()
+                        .getAsJsonObject("position").get("x").getAsInt());
             }
             local.addProperty("specifyStanding", false);
             payload.add("revision", response.get("revision"));
@@ -300,8 +301,9 @@ class V2ControlServerTest {
             binding = response.getAsJsonArray("categoryZones").get(0).getAsJsonObject()
                     .getAsJsonArray("bindings").get(0).getAsJsonObject();
             assertTrue(!binding.has("standingArea") || binding.get("standingArea").isJsonNull());
-            assertEquals(4, binding.getAsJsonObject("categoryOptions")
-                    .getAsJsonObject("standingPosition").get("x").getAsInt());
+            assertFalse(binding.getAsJsonObject("standingPlan").get("enabled").getAsBoolean());
+            assertEquals(4, binding.getAsJsonObject("standingPlan").getAsJsonArray("points")
+                    .get(0).getAsJsonObject().getAsJsonObject("position").get("x").getAsInt());
             payload.add("revision", response.get("revision"));
             assertEquals(401, fixture.send(path, "PUT", payload.toString(), false).statusCode());
             local.addProperty("specifyStanding", true);

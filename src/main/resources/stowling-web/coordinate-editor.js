@@ -15,8 +15,7 @@
     /** @typedef {{scopeMode: string, recognitionMode: string,
      * storageMethod: string, noCacheLocation: string, ignoreSupportBlock: boolean,
      * supportBlock: string, cacheDestination: string, expansionDirection: string,
-     * expansionStep: number, bulkStacks: number, specifyStanding: boolean|null,
-     * standingPosition: CoordinateCorner|null, ignoreMarkerPositions: boolean,
+     * expansionStep: number, bulkStacks: number, ignoreMarkerPositions: boolean,
      * ignoredMarkerPositions: CoordinateCorner[], ignoreRepeatedBlocks: boolean,
      * multiItemBindingsEnabled: boolean, multiItemBindings: CategoryItemBinding[],
      * unstackableOverflowRef: string}} CategoryOptions */
@@ -112,7 +111,7 @@
     };
 
     /** @typedef {{root: HTMLElement, fields: Object<string, HTMLElement>,
-     * selects: CategorySelect[], supportExpanded: boolean, standingExpanded: boolean,
+     * selects: CategorySelect[], supportExpanded: boolean,
      * values?: CategoryOptions, active?: boolean,
      * initialized?: boolean, positionsExpanded: boolean, bindingsExpanded: boolean,
      * repeatsExpanded: boolean, recognitionExpanded: boolean,
@@ -128,8 +127,7 @@
         const fields = {};
         for (const key of ["scope-mode", "recognition-mode", "storage-method", "no-cache-row",
             "no-cache-location", "ignore-support", "support-expand", "support-block-row",
-            "support-block", "bulk-ratio-row", "bulk-stacks", "specify-standing",
-            "standing-expand", "standing-row", "standing-x", "standing-y", "standing-z",
+            "support-block", "bulk-ratio-row", "bulk-stacks",
             "ignore-positions", "positions-expand", "positions-panel", "positions-list",
             "add-position", "multi-bindings", "bindings-expand", "bindings-panel",
             "rules-list", "add-rule", "ignore-repeated", "repeats-expand", "repeats-panel",
@@ -147,7 +145,7 @@
                 menu: wrap.querySelector(".category-select-menu"),
                 options: Array.from(wrap.querySelectorAll(".category-select-option"))
             }));
-        return {root, fields, selects, supportExpanded: false, standingExpanded: false,
+        return {root, fields, selects, supportExpanded: false,
             positionsExpanded: false, bindingsExpanded: false, repeatsExpanded: false,
             recognitionExpanded: false, ruleSelects: []};
     }
@@ -400,8 +398,6 @@
             expansionDirection: "AUTO",
             expansionStep: 1,
             bulkStacks: 27,
-            specifyStanding: false,
-            standingPosition: emptyCorner(),
             ignoreMarkerPositions: false,
             ignoredMarkerPositions: [],
             ignoreRepeatedBlocks: false,
@@ -427,8 +423,6 @@
      * @returns {void} */
     function writeCategoryOptions(options, context = globalCategoryContext) {
         const values = {...defaultCategoryOptions(), ...options};
-        // Missing fields belong to older clients whose standing areas must survive editing.
-        values.specifyStanding = options.specifyStanding ?? null;
         values.bulkStacks = options.bulkStacks ?? 27;
         context.values = values;
         populateCacheOptions(context);
@@ -443,12 +437,7 @@
         fields["ignore-support"].checked = values.ignoreSupportBlock;
         fields["support-block"].value = values.supportBlock;
         fields["bulk-stacks"].value = String(values.bulkStacks);
-        fields["specify-standing"].checked = Boolean(values.specifyStanding);
-        writeCornerFields({
-            x: fields["standing-x"], y: fields["standing-y"], z: fields["standing-z"]
-        }, values.standingPosition || emptyCorner());
         context.supportExpanded = values.ignoreSupportBlock;
-        context.standingExpanded = Boolean(values.specifyStanding);
         fields["ignore-positions"].checked = values.ignoreMarkerPositions;
         fields["ignore-repeated"].checked = values.ignoreRepeatedBlocks;
         fields["multi-bindings"].checked = values.multiItemBindingsEnabled;
@@ -485,8 +474,6 @@
             multiItemBindingsEnabled: fields["multi-bindings"].checked,
             multiItemBindings: Array.from(fields["rules-list"].children, readItemBinding),
             bulkStacks: fields["bulk-stacks"].valueAsNumber,
-            specifyStanding: context.values.specifyStanding ?? null,
-            standingPosition: context.values.standingPosition || null
         };
     }
 
@@ -510,22 +497,6 @@
         );
         reveal(fields["support-block-row"], expanded, animate);
         fields["support-block"].disabled = !ignoreSupport;
-        fields["specify-standing"].closest(".category-option-row").hidden = true;
-        fields["specify-standing"].closest(".category-option-row").inert = true;
-        const specifyStanding = fields["specify-standing"].checked;
-        const standingExpanded = false;
-        fields["standing-expand"].hidden = !specifyStanding;
-        fields["standing-expand"].disabled = !specifyStanding;
-        for (const control of [fields["standing-expand"], fields["specify-standing"]]) {
-            control.setAttribute("aria-expanded", String(standingExpanded));
-        }
-        fields["standing-expand"].setAttribute(
-            "aria-label", `${standingExpanded ? "收起" : "展开"}站立坐标设置`
-        );
-        reveal(fields["standing-row"], standingExpanded, animate);
-        for (const axis of ["x", "y", "z"]) {
-            fields[`standing-${axis}`].disabled = !standingExpanded || context.active === false;
-        }
         updateCustomRuleState(context, animate);
         updateUnstackableMode(context, animate);
     }
@@ -579,11 +550,6 @@
                 setStatus("散货占比请填写 0 到 54 之间的整数组数。", "error");
                 return false;
             }
-        }
-        if (fields["specify-standing"].checked && ["x", "y", "z"].some(axis =>
-            !Number.isInteger(fields[`standing-${axis}`].valueAsNumber))) {
-            setStatus("请填写站立位置的 X、Y、Z 整数坐标。", "error");
-            return false;
         }
         return globalCategoryContext.fields["recognition-mode"].value === "unstackable"
             || validateCustomRules(context);
@@ -2211,16 +2177,7 @@
             context.supportExpanded = fields["ignore-support"].checked;
             updateCategoryOptionState(context);
         });
-        fields["standing-expand"].addEventListener("click", () => {
-            if (!fields["specify-standing"].checked) return;
-            context.standingExpanded = !context.standingExpanded;
-            updateCategoryOptionState(context);
-        });
-        fields["specify-standing"].addEventListener("change", () => {
-            context.values.specifyStanding = fields["specify-standing"].checked;
-            context.standingExpanded = fields["specify-standing"].checked;
-            updateCategoryOptionState(context);
-        });
+
     }
 
     bindCategoryOptions(globalCategoryContext);

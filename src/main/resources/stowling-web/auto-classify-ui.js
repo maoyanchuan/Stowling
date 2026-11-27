@@ -90,7 +90,6 @@
         experimentsHeader: document.querySelector("#auto-experiments-toggle"),
         experimentsBody: document.querySelector("#auto-experiments-body"),
         experimentsSummary: document.querySelector("#auto-experiments-summary"),
-        standingSubregions: document.querySelector("#auto-standing-subregions"),
         overflowPacking: document.querySelector("#auto-overflow-packing-enabled"),
         warehouseHeader: document.querySelector("#robot-warehouse-toggle"),
         warehouseBody: document.querySelector("#robot-warehouse-body")
@@ -277,7 +276,6 @@
         remainderSettings?.resources(Auto.cacheLocations(state.resources));
         remainderSettings?.set(draft.remainderPolicy);
         elements.overflowPacking.checked = draft.remainderPolicy.overflowPackingEnabled;
-        elements.standingSubregions.checked = draft.standingSubregionsEnabled;
         renderClassificationTargets();
         updateControls();
     }
@@ -319,7 +317,6 @@
             overflowEnabled: kind !== "PICKUP" && elements.warehouseEnabled.checked,
             overflowDestinationRef: elements.warehouse.value,
             robotWarehouseMixedBoxes: elements.warehouseMixed.checked,
-            standingSubregionsEnabled: elements.standingSubregions.checked,
             remainderPolicy: {
                 ...(remainderSettings?.read() || state.draft.remainderPolicy),
                 overflowPackingEnabled: elements.overflowPacking.checked
@@ -368,10 +365,6 @@
                 description = source + " → " + zoneNames.join("、");
             }
             overview.append(Stowling.element("span", "", description));
-            if (item.kind === "CLASSIFICATION" && item.standingSubregionsEnabled) {
-                overview.append(Stowling.element("small", "settings-description",
-                    "已开启：分类多站位与子区绑定 · classification-standing-subregions"));
-            }
             const priority = window.StowlingTaskModel.priorityLabel(item.collectionPriority);
             const status = Stowling.element("span", "move-task-state",
                 item.enabled ? "监听中" : "已保存");
@@ -466,11 +459,8 @@
         const packing = elements.cacheEnabled.closest("section");
         packing.hidden = classification;
         packing.inert = classification;
-        elements.experimentsRoot.hidden = !showExperiments;
-        elements.experimentsRoot.inert = !showExperiments;
-        const standingRow = elements.standingSubregions.closest("label");
-        standingRow.hidden = !classification;
-        standingRow.inert = !classification;
+        elements.experimentsRoot.hidden = classification || !showExperiments;
+        elements.experimentsRoot.inert = classification || !showExperiments;
         const overflowPackingRow = elements.overflowPacking.closest("label");
         overflowPackingRow.hidden = !classification;
         overflowPackingRow.inert = !classification;
@@ -588,11 +578,6 @@
         elements.followUpDelay.disabled = !elements.followUpEnabled.checked
             || !elements.followUp.value;
         const activeExperiments = [];
-        if (classification && elements.standingSubregions.checked) {
-            activeExperiments.push("分类多站位与子区绑定（classification-standing-subregions）");
-        }
-        const activeNote = document.querySelector("#auto-standing-active");
-        activeNote.hidden = !classification || !elements.standingSubregions.checked;
         if (!classification && elements.cacheEnabled.checked) {
             activeExperiments.push("打包缓存（cachePolicy.enabled）");
         }
@@ -645,7 +630,8 @@
      */
     function phaseEnabled(phase) {
         if (phase === "experiments") {
-            return window.StowlingTaskDebugMode?.enabled() === true;
+            return state.draft.kind !== "CLASSIFICATION"
+                && window.StowlingTaskDebugMode?.enabled() === true;
         }
         if (phase === "pickup") return elements.collectEnabled.checked;
         if (phase === "packing") return elements.cacheEnabled.checked;

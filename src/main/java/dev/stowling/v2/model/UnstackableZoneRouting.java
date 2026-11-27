@@ -34,8 +34,7 @@ public final class UnstackableZoneRouting {
     private static CategoryZoneOptions dedicatedOptions(CategoryZoneOptions options) {
         if (options == null) return null;
         return new CategoryZoneOptions(options.scopeMode(), "unstackable", options.storageMethod(),
-                options.noCacheLocation(), options.cacheDestination(), false, "",
-                options.specifyStanding(), options.standingPosition(), options.bulkStacks(),
+                options.noCacheLocation(), options.cacheDestination(), false, "", options.bulkStacks(),
                 false, List.of(), false, false, List.of(), options.unstackableOverflowRef());
     }
 

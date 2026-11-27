@@ -8,18 +8,18 @@ import pytest
 
 
 @pytest.mark.parametrize("enabled", [False, True])
-def test_standing_subregion_experiment_defaults_off_and_survives_round_trip(enabled: bool) -> None:
+def test_merged_standing_flag_is_not_returned_or_saved(enabled: bool) -> None:
     result = _run("""(() => {
         const model = window.StowlingAutoClassifyTaskModel;
-        const draft = {...model.newDraft("CLASSIFICATION"), cacheLocationRef: "region:cache",
-            classificationAreas: [{categoryZoneId: "zone"}], standingSubregionsEnabled: """
-        + json.dumps(enabled) + """};
+        const task = {...model.newDraft("CLASSIFICATION"), cacheLocationRef: "region:cache",
+            classificationAreas: [{categoryZoneRef: "category-zone:zone"}],
+            standingSubregionsEnabled: """ + json.dumps(enabled) + """};
+        const draft = model.draftFromTask(task);
         const saved = model.payload(draft, {regions: [{id: "cache"}],
             categoryZones: [{id: "zone"}]});
-        return [model.newDraft("CLASSIFICATION").standingSubregionsEnabled,
-            saved.standingSubregionsEnabled, model.draftFromTask(saved).standingSubregionsEnabled];
+        return [draft, saved].map(value => Object.hasOwn(value, "standingSubregionsEnabled"));
     })()""")
-    assert result == [False, enabled, enabled]
+    assert result == [False, False]
 
 
 ROOT = Path(__file__).resolve().parents[1]

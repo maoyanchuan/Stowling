@@ -19,7 +19,6 @@ import java.util.UUID;
 
 public final class TaskRunWorkspace {
     private boolean classificationTask;
-    private boolean standingSubregionsEnabled;
     private boolean classificationDeliveryActive;
 
     private Set<String> classificationDemand = Set.of();
@@ -33,14 +32,6 @@ public final class TaskRunWorkspace {
 
     public synchronized boolean classificationTask() {
         return classificationTask;
-    }
-
-    public synchronized void configureStandingSubregions(boolean enabled) {
-        standingSubregionsEnabled = classificationTask && enabled;
-    }
-
-    public synchronized boolean standingSubregionsEnabled() {
-        return classificationTask && standingSubregionsEnabled;
     }
 
     public synchronized void endClassificationDelivery() {

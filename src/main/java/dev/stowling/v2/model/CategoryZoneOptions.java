@@ -13,8 +13,6 @@ public record CategoryZoneOptions(
         String cacheDestination,
         boolean ignoreSupportBlock,
         String supportBlock,
-        Boolean specifyStanding,
-        BlockPosition standingPosition,
         Integer bulkStacks,
         boolean ignoreMarkerPositions,
         List<CategoryPositionDraft> ignoredMarkerPositions,
@@ -23,27 +21,30 @@ public record CategoryZoneOptions(
         List<CategoryItemBinding> multiItemBindings,
         String unstackableOverflowRef
 ) {
-    public CategoryZoneOptions(
-            String scopeMode,
-            String recognitionMode,
-            String storageMethod,
-            String noCacheLocation,
-            String cacheDestination,
-            boolean ignoreSupportBlock,
-            String supportBlock,
-            Boolean specifyStanding,
-            BlockPosition standingPosition,
-            Integer bulkStacks,
-            boolean ignoreMarkerPositions,
-            List<CategoryPositionDraft> ignoredMarkerPositions,
-            boolean ignoreRepeatedBlocks,
-            boolean multiItemBindingsEnabled,
-            List<CategoryItemBinding> multiItemBindings
-    ) {
+    public CategoryZoneOptions(String scopeMode, String recognitionMode, String storageMethod,
+            String noCacheLocation, String cacheDestination, boolean ignoreSupportBlock,
+            String supportBlock, Integer bulkStacks, boolean ignoreMarkerPositions,
+            List<CategoryPositionDraft> ignoredMarkerPositions, boolean ignoreRepeatedBlocks,
+            boolean multiItemBindingsEnabled, List<CategoryItemBinding> multiItemBindings) {
         this(scopeMode, recognitionMode, storageMethod, noCacheLocation, cacheDestination,
-                ignoreSupportBlock, supportBlock, specifyStanding, standingPosition,
-                bulkStacks, ignoreMarkerPositions, ignoredMarkerPositions,
-                ignoreRepeatedBlocks, multiItemBindingsEnabled, multiItemBindings, null);
+                ignoreSupportBlock, supportBlock, bulkStacks, ignoreMarkerPositions,
+                ignoredMarkerPositions, ignoreRepeatedBlocks, multiItemBindingsEnabled,
+                multiItemBindings, null);
+    }
+
+    public CategoryZoneOptions(String scopeMode, String recognitionMode, String storageMethod,
+            String noCacheLocation, String cacheDestination, boolean ignoreSupportBlock,
+            String supportBlock, Integer bulkStacks) {
+        this(scopeMode, recognitionMode, storageMethod, noCacheLocation, cacheDestination,
+                ignoreSupportBlock, supportBlock, bulkStacks, false, List.of(), false, false,
+                List.of());
+    }
+
+    public CategoryZoneOptions(String scopeMode, String recognitionMode, String storageMethod,
+            String noCacheLocation, String cacheDestination, boolean ignoreSupportBlock,
+            String supportBlock) {
+        this(scopeMode, recognitionMode, storageMethod, noCacheLocation, cacheDestination,
+                ignoreSupportBlock, supportBlock, null);
     }
 
     public CategoryZoneOptions {
@@ -70,23 +71,6 @@ public record CategoryZoneOptions(
         if (bulkStacks != null && (bulkStacks < 0 || bulkStacks > 54)) {
             throw new IllegalArgumentException("散货占比请填写 0 到 54 之间的整数组数");
         }
-        if (Boolean.TRUE.equals(specifyStanding) && standingPosition == null) {
-            throw new IllegalArgumentException("请填写站立位置的 X、Y、Z 整数坐标");
-        }
-        if (Boolean.TRUE.equals(specifyStanding) && standingPosition.y() == Integer.MAX_VALUE) {
-            throw new IllegalArgumentException("站立脚下方块 Y 坐标过大");
-        }
-    }
-
-    public CategoryZoneOptions(
-            String scopeMode, String recognitionMode, String storageMethod,
-            String noCacheLocation, String cacheDestination, boolean ignoreSupportBlock,
-            String supportBlock, Boolean specifyStanding, BlockPosition standingPosition,
-            Integer bulkStacks
-    ) {
-        this(scopeMode, recognitionMode, storageMethod, noCacheLocation, cacheDestination,
-                ignoreSupportBlock, supportBlock, specifyStanding, standingPosition, bulkStacks,
-                false, List.of(), false, false, List.of());
     }
 
     public void validateActiveRules() {
@@ -110,33 +94,6 @@ public record CategoryZoneOptions(
     public List<BlockPosition> excludedMarkerPositions() {
         return ignoreMarkerPositions ? ignoredMarkerPositions.stream()
                 .map(CategoryPositionDraft::blockPosition).toList() : List.of();
-    }
-
-    public CategoryZoneOptions(
-            String scopeMode, String recognitionMode, String storageMethod,
-            String noCacheLocation, String cacheDestination, boolean ignoreSupportBlock,
-            String supportBlock, Boolean specifyStanding, BlockPosition standingPosition
-    ) {
-        this(scopeMode, recognitionMode, storageMethod, noCacheLocation, cacheDestination,
-                ignoreSupportBlock, supportBlock, specifyStanding, standingPosition, null);
-    }
-
-    public CategoryZoneOptions(
-            String scopeMode, String recognitionMode, String storageMethod,
-            String noCacheLocation, String cacheDestination, boolean ignoreSupportBlock,
-            String supportBlock
-    ) {
-        this(scopeMode, recognitionMode, storageMethod, noCacheLocation, cacheDestination,
-                ignoreSupportBlock, supportBlock, null, null);
-    }
-
-    public AreaBounds standingArea(AreaBounds previous) {
-        if (specifyStanding == null) return previous;
-        if (!specifyStanding) return null;
-        // The editable position is the support block; navigation uses the player's feet.
-        int feetY = standingPosition.y() + 1;
-        return new AreaBounds(standingPosition.x(), feetY, standingPosition.z(),
-                standingPosition.x(), feetY, standingPosition.z());
     }
 
     public String ruleId() {

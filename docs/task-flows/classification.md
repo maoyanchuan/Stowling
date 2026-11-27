@@ -24,7 +24,7 @@
 
 ## 输入与输出
 
-多站位与子区绑定作为独立默认关闭的实验接入，主基线不变。
+多站位与多区域绑定已由用户确认并入独立分类主基线，无任务级实验开关。
 完整输入、差异、失败条件和验证状态见 [分类区多站位](category-standing-bindings.md)。
 
 - `cacheLocationRef`：任务实际配置的物品来源坐标点或容器区域。
@@ -119,6 +119,7 @@
 - `classificationCachedEmptyBoxSettlementEnabled`
 - `foodPauseResumeEnabled`
 - `unstackableZoneRoutingEnabled`
+- `standingSubregionsEnabled`
 
 旧独立分类任务的已保存执行步骤统一生成当前主流程，并保持任务 ID、配置顺序、
 来源与目标位置、中断关系及运行相关设置。移除旧多来源模块和汇总模块。

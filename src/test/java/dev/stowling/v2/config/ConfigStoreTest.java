@@ -231,9 +231,9 @@ class ConfigStoreTest {
     @Test
     void upgradesSavedMixedAllocationWithoutResavingOrLosingIndependentDrafts() throws Exception {
         var global = new CategoryZoneOptions("selection", "marker", "mixed", "inside-box",
-                "", false, "", false, null, 27);
+                "", false, "", 27);
         var local = new CategoryZoneOptions("selection", "marker", "mixed", "inside-box",
-                "", false, "", false, null, 9);
+                "", false, "", 9);
         var area = new AreaBounds(0, 64, 0, 0, 64, 0);
         var packing = new AreaBounds(4, 64, 2, 4, 64, 2);
         for (boolean independent : List.of(false, true)) {
@@ -269,59 +269,13 @@ class ConfigStoreTest {
     }
 
     @Test
-    void repairsSavedSupportBlockHeightsWithoutLosingSliceOffsetsOrShiftingTwice()
-            throws Exception {
-        for (boolean independent : List.of(false, true)) {
-            var global = new CategoryZoneOptions("single", "marker", "bulk", "inside-box",
-                    "", false, "", true, new BlockPosition(-8, -45, 2));
-            var local = new CategoryZoneOptions("single", "marker", "bulk", "inside-box",
-                    "", false, "", true, new BlockPosition(-8, -44, 2));
-            var effective = independent ? local : global;
-            var marker = new AreaBounds(0, 64, 0, 0, 64, 0);
-            var storage = new AreaBounds(0, 65, 0, 0, 65, 0);
-            var template = new CategoryBindingDefinition(UUID.randomUUID(), marker, storage,
-                    "DIRECT_BLOCK_ID", List.of(), List.of(), effective.standingArea(null),
-                    StoragePolicy.DEFAULT, false, "A", independent, local);
-            var expansion = new CategoryZoneExpansionDefinition(
-                    new AreaBounds(0, 64, 0, 2, 65, 0),
-                    CategoryZoneExpansionAxis.X_POSITIVE, 1, 1);
-            var zone = new CategoryZoneDefinition(UUID.randomUUID(), "Standing",
-                    CategoryZoneTiler.expand(expansion, List.of(template), global),
-                    expansion, global);
-            var config = new AppConfig(AppConfig.CURRENT_SCHEMA_VERSION,
-                    List.of(), List.of(), List.of(), List.of(zone));
-            var saved = new Gson().toJsonTree(config).getAsJsonObject();
-            var savedZone = saved.getAsJsonArray("categoryZones").get(0).getAsJsonObject();
-            for (var element : savedZone.getAsJsonArray("bindings")) {
-                var standing = element.getAsJsonObject().getAsJsonObject("standingArea");
-                standing.addProperty("firstY", effective.standingPosition().y());
-                standing.addProperty("secondY", effective.standingPosition().y());
-            }
-            Path path = directory.resolve("standing-" + independent + ".json");
-            String original = saved.toString();
-            Files.writeString(path, original);
-            var store = new ConfigStore(path);
-            var restored = store.read();
-            assertEquals(config, restored.config());
-            assertEquals(new AreaBounds(-6, effective.standingPosition().y() + 1, 2,
-                    -6, effective.standingPosition().y() + 1, 2),
-                    restored.config().categoryZones().getFirst().bindings().get(2).standingArea());
-            assertEquals(original, Files.readString(path));
-            store.save(restored.revision(), restored.config());
-            assertEquals(config, new ConfigStore(path).read().config());
-        }
-    }
-
-    @Test
     void preservesGlobalSettingsAndDisabledIndependentDraftsAfterRestart() throws Exception {
         Path path = directory.resolve("independent-settings.json");
         var area = new AreaBounds(0, 64, 0, 0, 64, 0);
         var global = new dev.stowling.v2.model.CategoryZoneOptions("selection", "marker", "bulk",
-                "inside-box", "", false, "", false,
-                new dev.stowling.domain.BlockPosition(1, 65, -2), 13);
+                "inside-box", "", false, "", 13);
         var local = new dev.stowling.v2.model.CategoryZoneOptions("selection", "container-item",
-                "box", "inside-box", "", true, "minecraft:stone", true,
-                new dev.stowling.domain.BlockPosition(4, 66, -5), 9);
+                "box", "inside-box", "", true, "minecraft:stone", 9);
         var binding = new CategoryBindingDefinition(UUID.randomUUID(), area, area,
                 "DIRECT_BLOCK_ID", List.of(), List.of(), null,
                 dev.stowling.v2.model.StoragePolicy.DEFAULT, false, "A1", false, local);
@@ -338,14 +292,7 @@ class ConfigStoreTest {
         assertEquals("bulk", restored.categoryOptions().storageMethod());
         assertEquals(13, restored.categoryOptions().bulkStacks());
         assertEquals(9, restored.bindings().getFirst().categoryOptions().bulkStacks());
-        assertEquals(new dev.stowling.domain.BlockPosition(4, 66, -5),
-                restored.bindings().getFirst().categoryOptions().standingPosition());
-        var invalid = JsonParser.parseString(Files.readString(path)).getAsJsonObject();
-        invalid.getAsJsonArray("categoryZones").get(0).getAsJsonObject()
-                .getAsJsonObject("categoryOptions").getAsJsonObject("standingPosition")
-                .addProperty("x", 0.5);
-        Files.writeString(path, invalid.toString());
-        assertThrows(V2ValidationException.class, () -> new ConfigStore(path).read());
+        assertFalse(restored.bindings().getFirst().standingPlan().enabled());
     }
 
     @Test
@@ -353,7 +300,7 @@ class ConfigStoreTest {
         Path path = directory.resolve("bulk-stacks.json");
         var area = new AreaBounds(0, 64, 0, 0, 64, 0);
         var options = new CategoryZoneOptions("selection", "marker", "mixed", "inside-box",
-                "", false, "", null, null, 27);
+                "", false, "", 27);
         var binding = new CategoryBindingDefinition(UUID.randomUUID(), area, area,
                 "DIRECT_BLOCK_ID", List.of(), List.of(), null, StoragePolicy.DEFAULT,
                 false, "A", false, options);

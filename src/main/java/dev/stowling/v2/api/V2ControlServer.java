@@ -505,6 +505,7 @@ public final class V2ControlServer implements AutoCloseable {
                 sendJson(exchange, 200, service.autoClassifyTasks());
             } else if ("POST".equals(method)) {
                 JsonObject json = object(body);
+                json.remove("standingSubregionsEnabled");
                 requireFieldsAny(
                         json,
                         autoClassifyFields(false),
@@ -543,6 +544,7 @@ public final class V2ControlServer implements AutoCloseable {
             UUID id = uuid(suffix);
             if ("PUT".equals(method)) {
                 JsonObject json = object(body);
+                json.remove("standingSubregionsEnabled");
                 requireFieldsAny(
                         json,
                         autoClassifyFields(true),
@@ -994,8 +996,7 @@ public final class V2ControlServer implements AutoCloseable {
                 optionalInteger(json, "followUpDelaySeconds"),
                 optionalBooleanValue(json, "followUpEnabled"),
                 remainderPolicy(json),
-                optionalBooleanValue(json, "robotWarehouseMixedBoxes"),
-                optionalBooleanValue(json, "standingSubregionsEnabled")
+                optionalBooleanValue(json, "robotWarehouseMixedBoxes")
         );
     }
 
@@ -1022,8 +1023,7 @@ public final class V2ControlServer implements AutoCloseable {
                 optionalInteger(json, "followUpDelaySeconds"),
                 optionalBooleanValue(json, "followUpEnabled"),
                 remainderPolicy(json),
-                optionalBooleanValue(json, "robotWarehouseMixedBoxes"),
-                optionalBooleanValue(json, "standingSubregionsEnabled")
+                optionalBooleanValue(json, "robotWarehouseMixedBoxes")
         );
     }
 
@@ -1109,7 +1109,7 @@ public final class V2ControlServer implements AutoCloseable {
                 "cleanupPolicy",
                 "cachePolicy",
                 "remainderPolicy",
-                "robotWarehouseMixedBoxes", "standingSubregionsEnabled",
+                "robotWarehouseMixedBoxes",
 
                 "kind",
                 "followUpTaskRef",
@@ -1272,6 +1272,7 @@ public final class V2ControlServer implements AutoCloseable {
     private static List<CategoryBindingRequest> categoryBindings(
             JsonObject json
     ) {
+        dev.stowling.v2.config.CategoryStandingMigration.migrate(json);
         List<CategoryBindingRequest> result = new ArrayList<>();
         for (JsonElement value : array(json, "bindings")) {
             JsonObject binding = jsonObject(value, "binding");

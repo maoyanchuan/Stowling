@@ -44,7 +44,7 @@ final class MarkerContainerScanAction {
                 new LinkedHashMap<>();
         Map<BlockPosition, Target> byPosition = new LinkedHashMap<>();
         for (var segment : dev.stowling.v2.model.CategoryStandingSubregions.segments(zone,
-                context.workspace().standingSubregionsEnabled())) {
+                context.workspace().classificationTask())) {
             var binding = segment.binding();
             if (UnstackableCategoryRule.ID.equals(binding.ruleId())) {
                 continue;
@@ -64,7 +64,7 @@ final class MarkerContainerScanAction {
                 return Plan.failure(scan.message());
             }
             for (ContainerTarget target : scan.containers()) {
-                if (context.workspace().standingSubregionsEnabled()) {
+                if (context.workspace().classificationTask()) {
                     target = target.withStandingArea(binding.standingArea(), binding.storagePolicy());
                 }
                 ContainerTarget selected = target;

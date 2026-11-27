@@ -14,7 +14,7 @@ SETUP = """
     const storage = {...markers, firstX: 1, secondX: 1};
     const raw = {id: 'zone', name: 'Warehouse',
         categoryOptions: {scopeMode: 'selection', recognitionMode: 'container-item',
-            storageMethod: 'bulk', specifyStanding: false},
+            storageMethod: 'bulk'},
         bindings: [{id: 'group', markerArea: markers, storageArea: storage,
             ruleId: 'MARKER_CONTAINER_CONTENTS', wholeStorage: true,
             standingPlan: {enabled: true, points: [
@@ -69,11 +69,10 @@ def test_disabled_plan_preserves_incomplete_points_and_subregion_drafts() -> Non
 
 
 @pytest.mark.skipif(NODE is None, reason="Node.js is required")
-def test_legacy_effective_stance_initializes_one_group_owned_support_block() -> None:
+def test_migrated_stance_round_trips_as_a_group_owned_support_block() -> None:
     result = run_model(SETUP + """
-        delete raw.bindings[0].standingPlan;
-        raw.bindings[0].standingArea = {firstX: 2, secondX: 2,
-            firstY: 64, secondY: 64, firstZ: 7, secondZ: 7};
+        raw.bindings[0].standingPlan = {enabled: true, points: [
+            {position: {x: 2, y: 63, z: 7}, standingId: 'migrated-standing:g'}]};
         const loaded = model.resources({categoryZones: [raw]})[0];
         const cloned = model.copy(loaded);
         console.log(JSON.stringify({loaded: loaded.bindings[0].standingPlan,
@@ -105,8 +104,8 @@ def test_keyboard_standing_controls_are_independent_of_business_override(
     assert main.locator(".category-standing-body").evaluate("node => node.inert")
     enabled.check()
     assert main.locator('[data-standing-axis="y"]').input_value() == "63"
-    assert card.locator('[id$="category-specify-standing"]').is_hidden()
-    assert page.locator("#category-specify-standing").is_hidden()
+    assert card.locator('[id$="category-specify-standing"]').count() == 0
+    assert page.locator("#category-specify-standing").count() == 0
 
 
 @pytest.mark.parametrize("fixture", ["sample_page", "editor_page"])

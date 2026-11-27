@@ -2344,55 +2344,6 @@ textarea {
                                                 </button>
                                             </div>
                                         </div>
-                                        <div id="category-standing-option-row"
-                                             class="category-option-row">
-                                            <label class="category-option-label"
-                                                   for="category-specify-standing">
-                                                指定站立位置
-                                                <small>填写站立脚下方块坐标</small>
-                                            </label>
-                                            <div class="category-option-actions">
-                                                <button id="category-standing-expand"
-                                                        class="category-option-expand" type="button"
-                                                        aria-expanded="false"
-                                                        aria-controls="category-standing-row"
-                                                        aria-label="展开站立坐标设置" hidden>
-                                                    <svg aria-hidden="true" width="18" height="18"
-                                                         viewBox="0 0 24 24" fill="none"
-                                                         stroke="currentColor" stroke-width="1.8">
-                                                        <path d="m9 18 6-6-6-6"/>
-                                                    </svg>
-                                                </button>
-                                                <label class="category-option-switch"
-                                                       for="category-specify-standing">
-                                                    <input id="category-specify-standing"
-                                                           type="checkbox" role="switch"
-                                                           aria-controls="category-standing-row"
-                                                           aria-expanded="false">
-                                                </label>
-                                            </div>
-                                        </div>
-                                        <div id="category-standing-row"
-                                             class="category-option-sub" data-collapsed="true" hidden>
-                                            <span class="category-option-label">站立坐标</span>
-                                            <div class="coordinate-corner-fields">
-                                                <label class="field-label" for="category-standing-x">
-                                                    X
-                                                    <input id="category-standing-x" type="number"
-                                                           step="1" value="0">
-                                                </label>
-                                                <label class="field-label" for="category-standing-y">
-                                                    Y
-                                                    <input id="category-standing-y" type="number"
-                                                           step="1" value="64">
-                                                </label>
-                                                <label class="field-label" for="category-standing-z">
-                                                    Z
-                                                    <input id="category-standing-z" type="number"
-                                                           step="1" value="0">
-                                                </label>
-                                            </div>
-                                        </div>
                                     <div id="category-standing-settings"></div>
                                     </div>
                                     <div class="category-binding-section">
@@ -2454,8 +2405,7 @@ textarea {
 
     /** @typedef {{scopeMode: string, recognitionMode: string,
      * storageMethod: string, noCacheLocation: string, ignoreSupportBlock: boolean,
-     * supportBlock: string, bulkStacks: number, specifyStanding: boolean,
-     * standingPosition: CoordinateCorner, ignoreMarkerPositions: boolean,
+     * supportBlock: string, bulkStacks: number, ignoreMarkerPositions: boolean,
      * ignoredMarkerPositions: CoordinateCorner[], multiItemBindingsEnabled: boolean,
      * multiItemBindings: CategoryItemBinding[], ignoreRepeatedBlocks: boolean,
      * unstackableOverflowRef: string}} CategoryOptions */
@@ -2578,7 +2528,7 @@ textarea {
     };
 
     /** @typedef {{root: HTMLElement, fields: Object<string, HTMLElement>,
-     * selects: CategorySelect[], supportExpanded: boolean, standingExpanded: boolean,
+     * selects: CategorySelect[], supportExpanded: boolean,
      * positionsExpanded: boolean, bindingsExpanded: boolean, ruleSelects: CategorySelect[],
      * repeatsExpanded: boolean, recognitionExpanded: boolean,
      * initialized?: boolean, active?: boolean}} CategoryOptionsContext */
@@ -2592,8 +2542,7 @@ textarea {
         const fields = {};
         for (const key of ["scope-mode", "recognition-mode", "storage-method", "no-cache-row",
             "no-cache-location", "ignore-support", "support-expand", "support-block-row",
-            "support-block", "bulk-ratio-row", "bulk-stacks", "specify-standing",
-            "standing-expand", "standing-row", "standing-x", "standing-y", "standing-z",
+            "support-block", "bulk-ratio-row", "bulk-stacks",
             "ignore-positions", "positions-expand", "positions-panel", "positions-list",
             "add-position", "multi-bindings", "bindings-expand", "bindings-panel",
             "rules-list", "add-rule", "ignore-repeated", "repeats-expand", "repeats-panel",
@@ -2611,7 +2560,7 @@ textarea {
                 menu: wrap.querySelector(".category-select-menu"),
                 options: Array.from(wrap.querySelectorAll(".category-select-option"))
             }));
-        return {root, fields, selects, supportExpanded: false, standingExpanded: false,
+        return {root, fields, selects, supportExpanded: false,
             positionsExpanded: false, bindingsExpanded: false, repeatsExpanded: false,
             recognitionExpanded: false, ruleSelects: []};
     }
@@ -2861,8 +2810,6 @@ textarea {
             ignoreSupportBlock: false,
             supportBlock: "",
             bulkStacks: 27,
-            specifyStanding: false,
-            standingPosition: emptyCorner(),
             ignoreMarkerPositions: false,
             ignoredMarkerPositions: [],
             ignoreRepeatedBlocks: false,
@@ -2898,12 +2845,7 @@ textarea {
         fields["ignore-support"].checked = values.ignoreSupportBlock;
         fields["support-block"].value = values.supportBlock;
         fields["bulk-stacks"].value = String(values.bulkStacks);
-        fields["specify-standing"].checked = values.specifyStanding;
-        writeCornerFields({
-            x: fields["standing-x"], y: fields["standing-y"], z: fields["standing-z"]
-        }, values.standingPosition);
         context.supportExpanded = values.ignoreSupportBlock;
-        context.standingExpanded = values.specifyStanding;
         fields["ignore-positions"].checked = values.ignoreMarkerPositions;
         fields["ignore-repeated"].checked = values.ignoreRepeatedBlocks;
         fields["multi-bindings"].checked = values.multiItemBindingsEnabled;
@@ -2936,8 +2878,6 @@ textarea {
             multiItemBindingsEnabled: fields["multi-bindings"].checked,
             multiItemBindings: Array.from(fields["rules-list"].children, readItemBinding),
             bulkStacks: fields["bulk-stacks"].valueAsNumber,
-            specifyStanding: context.values.specifyStanding ?? null,
-            standingPosition: context.values.standingPosition || null
         };
     }
 
@@ -2991,11 +2931,6 @@ textarea {
                 return false;
             }
         }
-        if (fields["specify-standing"].checked && ["x", "y", "z"].some(axis =>
-            !Number.isInteger(fields[`standing-${axis}`].valueAsNumber))) {
-            setStatus("请填写站立位置的 X、Y、Z 整数坐标。", "error");
-            return false;
-        }
         return globalCategoryContext.fields["recognition-mode"].value === "unstackable"
             || validateCustomRules(context);
     }
@@ -3021,22 +2956,6 @@ textarea {
         );
         reveal(fields["support-block-row"], expanded, animate);
         fields["support-block"].disabled = !ignoreSupport;
-        fields["specify-standing"].closest(".category-option-row").hidden = true;
-        fields["specify-standing"].closest(".category-option-row").inert = true;
-        const specifyStanding = fields["specify-standing"].checked;
-        const standingExpanded = false;
-        fields["standing-expand"].hidden = !specifyStanding;
-        fields["standing-expand"].disabled = !specifyStanding;
-        for (const control of [fields["standing-expand"], fields["specify-standing"]]) {
-            control.setAttribute("aria-expanded", String(standingExpanded));
-        }
-        fields["standing-expand"].setAttribute(
-            "aria-label", `${standingExpanded ? "收起" : "展开"}站立坐标设置`
-        );
-        reveal(fields["standing-row"], standingExpanded, animate);
-        for (const axis of ["x", "y", "z"]) {
-            fields[`standing-${axis}`].disabled = !standingExpanded || context.active === false;
-        }
         updateCustomRuleState(context, animate);
         updateUnstackableMode(context, animate);
     }
@@ -4473,15 +4392,7 @@ textarea {
             context.supportExpanded = fields["ignore-support"].checked;
             updateCategoryOptionState(context);
         });
-        fields["standing-expand"].addEventListener("click", () => {
-            if (!fields["specify-standing"].checked) return;
-            context.standingExpanded = !context.standingExpanded;
-            updateCategoryOptionState(context);
-        });
-        fields["specify-standing"].addEventListener("change", () => {
-            context.standingExpanded = fields["specify-standing"].checked;
-            updateCategoryOptionState(context);
-        });
+
     }
 
     bindCategoryOptions(globalCategoryContext);

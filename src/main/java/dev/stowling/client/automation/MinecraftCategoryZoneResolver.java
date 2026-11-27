@@ -116,12 +116,12 @@ public final class MinecraftCategoryZoneResolver
     @Override
     public CategoryZoneResult resolve(CategoryZoneDefinition zone, Set<String> containerTypes,
             int maxVolume, Map<BlockPosition, Set<String>> markerContainerContents,
-            Set<CategoryMarkerSource> markerSources, boolean standingSubregionsEnabled) {
+            Set<CategoryMarkerSource> markerSources, boolean classificationTask) {
         if (markerSources != null && markerSources.isEmpty()) {
             return CategoryZoneResult.failure("未选择分类标记来源");
         }
         return resolveZone(zone, containerTypes, maxVolume, markerContainerContents,
-                markerSources, standingSubregionsEnabled);
+                markerSources, classificationTask);
     }
 
     private CategoryZoneResult resolveZone(
@@ -130,7 +130,7 @@ public final class MinecraftCategoryZoneResolver
             int maxVolume,
             Map<BlockPosition, Set<String>> markerContainerContents,
             Set<CategoryMarkerSource> markerSources,
-            boolean standingSubregionsEnabled
+            boolean classificationTask
     ) {
         Objects.requireNonNull(zone, "zone");
         Objects.requireNonNull(containerTypes, "containerTypes");
@@ -152,7 +152,7 @@ public final class MinecraftCategoryZoneResolver
                     containerTypes,
                     maxVolume,
                     markerContainerContents,
-                    markerSources, standingSubregionsEnabled
+                    markerSources, classificationTask
             );
         } catch (RuntimeException exception) {
             return CategoryZoneResult.failure(
@@ -168,12 +168,12 @@ public final class MinecraftCategoryZoneResolver
             int maxVolume,
             Map<BlockPosition, Set<String>> markerContainerContents,
             Set<CategoryMarkerSource> markerSources,
-            boolean standingSubregionsEnabled
+            boolean classificationTask
     ) {
         List<CategoryZoneClassifier.Scan> scans = new ArrayList<>();
         Map<BlockPosition, AreaBounds> assignedStances = new java.util.LinkedHashMap<>();
         for (var segment : dev.stowling.v2.model.CategoryStandingSubregions.segments(
-                zone, standingSubregionsEnabled)) {
+                zone, classificationTask)) {
             CategoryBindingDefinition binding = segment.binding();
             var options = segment.options();
             Set<BlockPosition> excluded = options == null ? Set.of()
@@ -201,7 +201,7 @@ public final class MinecraftCategoryZoneResolver
                         Set.copyOf(binding.ignoredMarkerBlockIds()), markerContainerContents,
                         markerSourcesFor(binding.ruleId(), markerSources), excluded);
             }
-            if (standingSubregionsEnabled) {
+            if (classificationTask) {
                 for (var container : storageScan.containers()) {
                     for (var entrance : container.entrances()) {
                         if (assignedStances.containsKey(entrance) && !Objects.equals(

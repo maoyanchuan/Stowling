@@ -150,8 +150,7 @@ class CategoryZoneClassifierTest {
     private static CategoryZoneOptions options(
             List<BlockPosition> excluded, boolean repeats, List<CategoryItemBinding> rules
     ) {
-        return new CategoryZoneOptions("single", "marker", "bulk", "inside-box", "", false, "",
-                false, null, 27, !excluded.isEmpty(),
+        return new CategoryZoneOptions("single", "marker", "bulk", "inside-box", "", false, "", 27, !excluded.isEmpty(),
                 excluded.stream().map(CategoryPositionDraft::of).toList(),
                 repeats, !rules.isEmpty(), rules);
     }

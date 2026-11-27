@@ -366,7 +366,7 @@ class MinecraftContainerCacheRefreshTest {
     }
 
     @Test
-    void classificationMarkerRefreshUsesTheGroupPointOnlyWhenItsExperimentIsEnabled() {
+    void classificationMarkerRefreshUsesBaselineStancesAndOrdinaryRefreshRemainsIsolated() {
         for (boolean enabled : List.of(false, true)) {
             var world = new World();
             world.loadAll = true;
@@ -383,8 +383,7 @@ class MinecraftContainerCacheRefreshTest {
             var zone = new CategoryZoneDefinition(UUID.randomUUID(), "仓库", List.of(binding));
             var ports = TaskModuleRuntimeRegistry.unavailablePorts(world);
             var workspace = new TaskRunWorkspace();
-            workspace.configureClassificationTask(true);
-            workspace.configureStandingSubregions(enabled);
+            workspace.configureClassificationTask(enabled);
             var context = new TaskExecutionContext(world, ports.droppedItems(),
                     ports.containerRegions(), ports.containerTransfers(), ports.containerWithdrawals(),
                     inspection, new MarkerCache(), ports.categoryZones(), Map.of(), Map.of(),

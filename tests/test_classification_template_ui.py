@@ -112,7 +112,7 @@ def set_robot_warehouse(page: Any, enabled: bool) -> None:
 
 
 @pytest.mark.parametrize("theme,width", [("green", 1000), ("gray", 1000), ("green", 390)])
-def test_total_overflow_packing_saves_and_survives_hidden_debug_and_collapsed_task(
+def test_total_overflow_packing_is_regular_and_keeps_saved_values(
     classification_page: Any, theme: str, width: int,
 ) -> None:
     page = classification_page
@@ -123,56 +123,125 @@ def test_total_overflow_packing_saves_and_survives_hidden_debug_and_collapsed_ta
     toggle = page.locator("#auto-overflow-packing-enabled")
     assert menu.is_hidden()
     assert not toggle.is_checked()
+    assert page.locator("#auto-overflow-storage-settings").locator(toggle).count() == 1
+    assert page.locator(".auto-experiment-status").count() == 0
     page.evaluate("""() => {
         window.StowlingTaskDebugMode = {enabled: () => true};
         document.dispatchEvent(new Event('stowling:task-debug-mode-changed'));
     }""")
-    assert menu.is_visible()
-    assert page.locator("#auto-experiments-toggle").get_attribute("aria-expanded") == "false"
-    assert toggle.is_hidden()
-    page.locator("#auto-experiments-toggle").click()
+    assert menu.is_hidden() and menu.evaluate("node => node.inert")
+    page.locator("#auto-overflow-toggle").press("Space")
     settle(page)
-    toggle.press("Space")
-    page.wait_for_function("backend.item.remainderPolicy?.overflowPackingEnabled === true")
-    indicator = page.locator("#auto-task-list .auto-experiment-status")
-    assert indicator.is_visible()
-    assert "classification-total-overflow-packing" in indicator.inner_text()
-    assert "待开启总溢出" in indicator.inner_text()
-    assert not page.locator("#auto-cache-packing-enabled").is_visible()
-
-    page.locator("#auto-experiments-toggle").click()
-    settle(page)
-    assert toggle.is_checked() and toggle.is_hidden()
-    assert indicator.is_visible()
-    page.evaluate("""() => {
-        window.StowlingTaskDebugMode = {enabled: () => false};
-        document.dispatchEvent(new Event('stowling:task-debug-mode-changed'));
-    }""")
-    assert menu.is_hidden()
-    assert menu.evaluate("node => node.inert")
-    assert toggle.is_checked()
-    page.locator("#auto-task-list .pickup-task-expand").click()
-    settle(page)
-    assert indicator.is_visible()
-    open_settings(page)
-    assert toggle.is_checked()
-    page.locator("#auto-overflow-toggle").click()
-    settle(page)
-    page.locator("#auto-overflow-storage-enabled").check()
+    assert toggle.is_hidden() and toggle.is_disabled()
+    total_enabled = page.locator("#auto-overflow-storage-enabled")
+    total_enabled.check()
     settle(page)
     row = page.locator(".move-field:has(#auto-overflow-storage-location)")
     row.locator(".task-select-trigger").click()
     page.get_by_role("option", name="备用缓存").click()
     page.wait_for_function("backend.item.remainderPolicy?.overflowEnabled === true")
-    assert page.evaluate("backend.item.remainderPolicy.overflowPackingEnabled") is True
+    toggle.press("Space")
+    page.wait_for_function("backend.item.remainderPolicy.overflowPackingEnabled === true")
+    bounds = page.locator("#auto-overflow-packing-row").bounding_box()
+    control = toggle.bounding_box()
+    assert bounds is not None and control is not None
+    assert abs(bounds["x"] + bounds["width"] - control["x"] - control["width"]) < 1
+    assert abs(bounds["y"] + bounds["height"] / 2 - control["y"] - control["height"] / 2) < 1
+    title = page.locator("#auto-overflow-packing-row .settings-copy > span:first-child")
+    assert title.evaluate("node => getComputedStyle(node).fontSize") == "16px"
+    assert title.evaluate("node => getComputedStyle(node).fontWeight") == "400"
     assert "先续装已有未满盒" in page.locator("#auto-overflow-storage-settings").inner_text()
-    assert "已启用" in indicator.inner_text()
-    page.locator("#auto-overflow-storage-enabled").uncheck()
+    page.locator("#auto-overflow-storage-toggle").press("Space")
+    settle(page)
+    assert toggle.is_checked() and toggle.is_hidden()
+    assert total_enabled.is_checked()
+    page.evaluate("""() => {
+        window.StowlingTaskDebugMode = {enabled: () => false};
+        document.dispatchEvent(new Event('stowling:task-debug-mode-changed'));
+    }""")
+    page.locator("#auto-overflow-storage-toggle").press("Space")
+    settle(page)
+    assert toggle.is_visible() and toggle.is_checked()
+    total_enabled.uncheck()
     page.wait_for_function("backend.item.remainderPolicy.overflowEnabled === false")
-    assert toggle.is_checked()
-    assert "待开启总溢出" in indicator.inner_text()
+    settle(page)
+    assert toggle.is_checked() and toggle.is_hidden() and toggle.is_disabled()
+    assert page.evaluate("backend.item.remainderPolicy.overflowPackingEnabled") is True
+    page.locator("#auto-task-list .pickup-task-expand").click()
+    settle(page)
+    page.locator("#refresh-move-tasks").click()
+    page.wait_for_function("!document.querySelector('#refresh-move-tasks').disabled")
+    open_settings(page)
+    total_enabled.check()
+    page.wait_for_function("backend.item.remainderPolicy.overflowEnabled === true")
+    settle(page)
+    assert toggle.is_visible() and toggle.is_checked()
+    toggle.press("Space")
+    page.wait_for_function("backend.item.remainderPolicy.overflowPackingEnabled === false")
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     assert page.evaluate("backend.requests.filter(item => item.method === 'POST')") == []
+
+
+@pytest.mark.parametrize("theme,width", [("green", 1000), ("gray", 1000), ("green", 390)])
+def test_overflow_arrows_match_template_and_align_with_independent_switches(
+    classification_page: Any, theme: str, width: int, tmp_path: Path,
+) -> None:
+    page = classification_page
+    page.set_viewport_size({"width": width, "height": 1000})
+    page.evaluate("theme => document.documentElement.dataset.theme = theme", theme)
+    open_settings(page)
+    page.locator("#auto-overflow-toggle").click()
+    settle(page)
+    controls = [
+        ("auto-unclassifiable-toggle", "auto-unclassifiable-enabled"),
+        ("auto-overflow-storage-toggle", "auto-overflow-storage-enabled"),
+        ("robot-warehouse-toggle", "robot-warehouse-enabled"),
+    ]
+    for button_id, switch_id in controls:
+        switch = page.locator("#" + switch_id)
+        if switch_id == "robot-warehouse-enabled":
+            set_robot_warehouse(page, True)
+        else:
+            switch.check()
+        settle(page)
+        button = page.locator("#" + button_id)
+        if button.get_attribute("aria-expanded") == "true":
+            button.press("Space")
+            settle(page)
+        assert switch.is_checked()
+    arrow_positions = []
+    for button_id, switch_id in controls:
+        button = page.locator("#" + button_id)
+        arrow = button.locator(".classification-overflow-chevron")
+        icon = arrow.locator("svg")
+        assert icon.locator("path").get_attribute("d") == "m9 6 6 6-6 6"
+        assert icon.evaluate("node => getComputedStyle(node).transform") == "none"
+        assert arrow.evaluate("node => getComputedStyle(node).borderRightWidth") == "0px"
+        bounds = arrow.bounding_box()
+        switch = page.locator("#" + switch_id)
+        visual_switch = (
+            page.locator("#robot-warehouse-enabled + .auto-switch-track")
+            if switch_id == "robot-warehouse-enabled" else switch
+        )
+        switch_bounds = visual_switch.bounding_box()
+        assert bounds is not None and switch_bounds is not None
+        assert abs(bounds["y"] + bounds["height"] / 2
+                   - switch_bounds["y"] - switch_bounds["height"] / 2) < 1
+        assert abs(switch_bounds["x"] - bounds["x"] - bounds["width"] - 16) < 1
+        arrow_positions.append(bounds["x"] + bounds["width"] / 2)
+        button.press("Space")
+        settle(page)
+        transform = icon.evaluate("node => getComputedStyle(node).transform")
+        assert transform == "matrix(0, 1, -1, 0, 0, 0)"
+        assert switch.is_checked()
+        button.press("Space")
+        settle(page)
+        assert switch.is_checked()
+    assert max(arrow_positions) - min(arrow_positions) < 1
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    image = tmp_path / f"overflow-{theme}-{width}.png"
+    page.locator("#auto-overflow-settings").screenshot(path=str(image))
+    print(f"Overflow preview: {image}")
 
 
 def test_classification_header_separates_real_execution_and_configuration(

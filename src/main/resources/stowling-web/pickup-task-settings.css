@@ -125,6 +125,47 @@ body[data-page="tasks"] .pickup-task-module::before {
     min-width: min(240px, 100%);
 }
 
+/* The three overflow rows use the approved template's arrow and control spacing. */
+body[data-page="tasks"] #auto-overflow-packing-row {
+    font: inherit;
+}
+
+body[data-page="tasks"] #auto-overflow-settings .settings-option-header {
+    gap: 16px;
+}
+
+body[data-page="tasks"] #auto-overflow-settings .classification-overflow-chevron {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 36px;
+    width: 36px;
+    height: 36px;
+    margin: 0;
+    border: 0;
+    transform: none;
+}
+
+body[data-page="tasks"] #auto-overflow-settings .classification-overflow-chevron[hidden],
+body[data-page="tasks"] #auto-overflow-settings
+    .auto-config-section[data-enabled="false"] .classification-overflow-chevron {
+    display: none;
+}
+
+#auto-overflow-settings .classification-overflow-chevron svg {
+    transition: transform 160ms ease-out;
+}
+
+#auto-overflow-settings [aria-expanded="true"] > .classification-overflow-chevron svg {
+    transform: rotate(90deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    #auto-overflow-settings .classification-overflow-chevron svg {
+        transition: none;
+    }
+}
+
 body[data-page] .auto-eat-task-form .move-field .pickup-task-expand {
     background: transparent;
 }
@@ -652,13 +693,6 @@ body[data-page] .task-select-option:focus-visible {
     font-weight: 400;
     line-height: 1.4;
     white-space: nowrap;
-}
-
-.pickup-task-module > .auto-experiment-status {
-    margin: 0;
-    padding: 14px 20px;
-    font-size: 14px;
-    overflow-wrap: anywhere;
 }
 
 #auto-same-category-batching-row[hidden] {

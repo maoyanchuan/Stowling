@@ -4172,7 +4172,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                 String label = "UNCLASSIFIABLE".equals(remainderKind) ? "不可分类"
                         : dev.stowling.v2.model.UnstackableZoneRouting.KIND.equals(remainderKind)
                                 ? "不可堆叠区域专属溢出" : "溢出";
-                if (boxedOnly) return "总溢出打包存放结束（classification-total-overflow-packing）";
+                if (boxedOnly) return "总溢出打包存放结束";
                 return label + "物品存放结束，未能存入的物品保留在物品来源";
             }
             if (boxedOnly) return storedOrdinary ? "储存区溢出物品已装盒存入机器人仓库"

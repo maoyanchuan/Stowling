@@ -970,7 +970,25 @@
                                             </div>
                                         </section>
                                         <div id="auto-empty-box-settings" hidden></div>
-                                        <div id="auto-remainder-settings" hidden></div>
+                                        <div id="auto-remainder-settings" hidden>
+                                            <label id="auto-overflow-packing-row"
+                                                   class="settings-row" hidden inert>
+                                                <span class="settings-copy">
+                                                    <span>总溢出先打包</span>
+                                                    <span class="settings-description"
+                                                          id="auto-overflow-packing-help">
+                                                        默认关闭；送入总溢出位置的任务物品
+                                                        先续装已有未满盒，再使用空盒，允许杂盒。
+                                                        不可分类共用此位置时同样打包。
+                                                    </span>
+                                                </span>
+                                                <input id="auto-overflow-packing-enabled"
+                                                       class="settings-switch"
+                                                       type="checkbox" role="switch"
+                                                       aria-describedby=
+                                                           "auto-overflow-packing-help">
+                                            </label>
+                                        </div>
                                         <section id="robot-warehouse-settings"
                                                  class="auto-config-section"
                                                  aria-labelledby="robot-warehouse-title">
@@ -1107,23 +1125,6 @@
                                             </div>
                                             <div id="auto-experiments-body"
                                                  class="auto-phase-body" hidden>
-                                                <label id="auto-overflow-packing-row"
-                                                       class="move-field" hidden inert>
-                                                    <span class="settings-copy">
-                                                        <span>总溢出先打包</span>
-                                                        <span class="settings-description"
-                                                              id="auto-overflow-packing-help">
-                                                            默认关闭；送入总溢出位置的任务物品
-                                                            先续装已有未满盒，再使用空盒，允许杂盒。
-                                                            不可分类共用此位置时同样打包。
-                                                        </span>
-                                                    </span>
-                                                    <input id="auto-overflow-packing-enabled"
-                                                           class="settings-switch"
-                                                           type="checkbox" role="switch"
-                                                           aria-describedby=
-                                                               "auto-overflow-packing-help">
-                                                </label>
                                                 <section class="auto-config-section
                                                                 auto-cache-submenu"
                                                          aria-labelledby="auto-packing-title">

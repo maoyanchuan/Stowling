@@ -26,8 +26,23 @@
         const unclassifiable = destinationSetting("unclassifiable", "不可分类",
             "未匹配任何目标分类区的物品，送往所选位置。");
         const overflow = destinationSetting("overflow-storage", "总溢出", "");
+        overflow.root.querySelector(".settings-detail").append(
+            host.querySelector("#auto-overflow-packing-row"));
         const body = S.element("div");
         body.append(unclassifiable.root, overflow.root, robot);
+        for (const arrow of body.querySelectorAll(".settings-chevron, .move-task-chevron")) {
+            arrow.classList.add("classification-overflow-chevron");
+            const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+            for (const [name, value] of Object.entries({width: "18", height: "18",
+                viewBox: "0 0 24 24", fill: "none", stroke: "currentColor",
+                "stroke-width": "1.8", "stroke-linecap": "round", "stroke-linejoin": "round"})) {
+                icon.setAttribute(name, value);
+            }
+            const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+            path.setAttribute("d", "m9 6 6 6-6 6");
+            icon.append(path);
+            arrow.replaceChildren(icon);
+        }
         const section = Settings.disclosure("溢出处理", "", body);
         section.root.id = "auto-overflow-settings";
         section.summary.id = "auto-overflow-toggle";

@@ -57,10 +57,11 @@ def test_merged_classification_controls_are_removed() -> None:
         assert control not in page.attrs
 
 
-def test_total_overflow_packing_is_an_independent_footer_experiment() -> None:
+def test_total_overflow_packing_is_a_regular_remainder_setting() -> None:
     page = markup(WEB / "tasks.html")
     control = "auto-overflow-packing-enabled"
-    assert "auto-experiments-body" in page.parents[control]
+    assert "auto-remainder-settings" in page.parents[control]
+    assert "auto-experiments-body" not in page.parents[control]
     assert page.attrs[control]["role"] == "switch"
     assert "checked" not in page.attrs[control]
     assert page.attrs[control]["aria-describedby"] == "auto-overflow-packing-help"

@@ -287,3 +287,27 @@ def test_selling_experiment_requires_debug_to_edit_but_allows_reading(template_p
     assert option.is_disabled()
     assert option.is_checked()
     assert active.is_visible()
+
+
+@pytest.mark.parametrize("theme", ["green", "gray"])
+@pytest.mark.parametrize("width, indent", [(390, 10), (1440, 20)])
+def test_maximum_sale_suboption_uses_shared_indent_and_keeps_controls_aligned(
+    template_page: Any, theme: str, width: int, indent: int,
+) -> None:
+    page = template_page
+    page.set_viewport_size({"width": width, "height": 1100})
+    if page.locator("html").get_attribute("data-theme") != theme:
+        page.locator("#template-theme-toggle").click()
+    heading = page.get_by_role("heading", name="单个物品最大售卖数量", exact=True).bounding_box()
+    label = page.locator('label[for="sample-maximum"]').bounding_box()
+    maximum = page.locator("#sample-maximum").bounding_box()
+    target = page.locator("#sample-target-trigger").bounding_box()
+    assert heading is not None and label is not None and maximum is not None and target is not None
+    assert label["x"] - heading["x"] == pytest.approx(indent)
+    assert maximum["x"] + maximum["width"] == pytest.approx(target["x"] + target["width"])
+    page.locator("#sample-wuling-expand").click()
+    parent = page.locator('label[for="sample-wuling"]').bounding_box()
+    child = page.locator('label[for="sample-wuling-reserve"]').bounding_box()
+    assert parent is not None and child is not None
+    assert child["x"] - parent["x"] == pytest.approx(indent)
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")

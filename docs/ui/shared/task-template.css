@@ -3,6 +3,7 @@
     --sample-header-height: 70px;
     --sample-row-height: 82px;
     --sample-padding: 20px;
+    --sample-child-indent: 20px;
     --sample-font-size: 16px;
     --sample-control-height: var(--settings-control-height);
     --sample-select-width: 38%;
@@ -180,6 +181,7 @@
 }
 #stowling-settings-standard .sample-number-row {
     min-height: 58px;
+    margin-left: var(--sample-child-indent);
 }
 #stowling-settings-standard .sample-number-row > .sample-number {
     flex: 0 0 var(--sample-input-width);
@@ -188,7 +190,7 @@
     min-width: 0;
 }
 #stowling-settings-standard .sample-detail-inner {
-    padding: 2px 0 18px 20px;
+    padding: 2px 0 18px var(--sample-child-indent);
 }
 #stowling-settings-standard .sample-detail-row {
     min-height: 80px;
@@ -241,6 +243,9 @@
     background: var(--sample-text);
 }
 @media (max-width: 480px) {
+    #stowling-settings-standard {
+        --sample-child-indent: 10px;
+    }
     #stowling-settings-standard .sample-header {
         gap: 9px;
     }
@@ -258,9 +263,6 @@
     #stowling-settings-standard .sample-select-actions {
         flex-basis: 100%;
         min-width: 0;
-    }
-    #stowling-settings-standard .sample-detail-inner {
-        padding-left: 10px;
     }
     #stowling-settings-standard .sample-detail-row {
         flex-wrap: wrap;

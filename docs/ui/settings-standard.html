@@ -59,6 +59,25 @@
             <path fill="#493e34" d="M11 9h5v7h-5z"/>
             <path fill="#d9dacf" d="M12 9h3v5h-3z"/>
         </g>
+        <g id="barrel" shape-rendering="crispEdges">
+            <path fill="#453324" d="M1 0h24v26H1z"/>
+            <path fill="#a37444" d="M3 2h20v22H3z"/>
+            <path fill="#80552f" d="M7 2h2v22H7zM16 2h2v22h-2z"/>
+            <path fill="#514e46" d="M1 4h24v4H1zM1 18h24v4H1z"/>
+            <path fill="#928a76" d="M2 4h22v1H2zM2 18h22v1H2z"/>
+        </g>
+        <g id="slab" shape-rendering="crispEdges">
+            <path fill="#605d55" d="M0 13h26v13H0z"/>
+            <path fill="#a39f92" d="M1 14h24v9H1z"/>
+            <path fill="#c4c0b2" d="M1 14h24v2H1z"/>
+            <path fill="#89867d" d="M3 20h7v1H3zM16 18h6v1h-6z"/>
+        </g>
+        <g id="stairs" shape-rendering="crispEdges">
+            <path fill="#59574f" d="M13 0h13v26H0V13h13z"/>
+            <path fill="#a39f92" d="M15 2h9v21H2v-8h13z"/>
+            <path fill="#c4c0b2" d="M15 2h9v2h-9zM2 15h13v2H2z"/>
+            <path fill="#89867d" d="M4 21h8v1H4zM17 10h5v1h-5z"/>
+        </g>
         <g id="checker" shape-rendering="crispEdges">
             <path fill="#1e1924" d="M0 0h26v26H0z"/>
             <path fill="#cf46ce" d="M1 1h12v12H1zM13 13h12v12H13z"/>
@@ -3092,12 +3111,14 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
                                                     <strong>扫描坐标结果</strong>
                                                     <span class="classic-stage"></span>
                                                 </figcaption>
-                                                <div class="classic-board"></div>
+                                                <div class="classic-workspace">
+                                                    <aside class="classic-palette" aria-label="方块">
+                                                        <strong>方块</strong>
+                                                    </aside>
+                                                    <div class="classic-board"></div>
+                                                </div>
                                                 <div class="classic-footer">
                                                     <p class="classic-hint" role="status"></p>
-                                                    <button type="button" class="classic-add-chest">
-                                                        添加小箱子
-                                                    </button>
                                                     <button type="button" class="classic-undo">
                                                         撤销
                                                     </button>

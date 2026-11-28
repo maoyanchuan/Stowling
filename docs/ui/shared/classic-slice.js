@@ -3,10 +3,10 @@
 
     const unit = 26;
     const names = {chest: "双箱", single: "小箱子",
-        checker: "紫黑方块", glass: "玻璃", low: "低矮构件"};
+        barrel: "木桶", slab: "下半砖", stairs: "楼梯", checker: "紫黑方块", glass: "玻璃", low: "低矮构件"};
     const directions = {ArrowLeft: [-1, 0], ArrowRight: [1, 0],
         ArrowUp: [0, -1], ArrowDown: [0, 1]};
-    const hint = "拖动或用方向键移动 · 小箱子左右相邻自动合并，右键双箱可拆分。";
+    const hint = "从侧栏选方块，再点空格放置。已有方块可拖动。";
 
     /** @param {string} tag @param {object} attrs @returns {SVGElement} */
     function svgElement(tag, attrs) {
@@ -22,8 +22,11 @@
         const svg = document.querySelector("#classic-slice-art").content.firstElementChild
             .cloneNode(true);
         const grid = svg.querySelector(".classic-grid");
-        const axis = svgElement("g", {class: "classic-axis", "aria-hidden": "true"});
-        svg.append(axis);
+        const cursor = svgElement("rect", {class: "placement-cursor", width: unit, height: unit,
+            "pointer-events": "none", fill: "none", stroke: "var(--accent)", "stroke-width": 2});
+        svg.append(cursor);
+        grid.setAttribute("role", "button");
+        grid.setAttribute("aria-label", "放置方块，方向键选格，回车放置");
         const undo = figure.querySelector(".classic-undo");
         let history = [];
         let columns = 0;
@@ -37,7 +40,10 @@
         target.style.display = "none";
         svg.append(target);
 
-        const addChest = figure.querySelector(".classic-add-chest");
+        const palette = figure.querySelector(".classic-palette");
+        let selected = "";
+        let cellX = 0;
+        let cellY = 0;
         const defaults = new Map();
         const pieces = new Map();
         let positions = {};
@@ -106,7 +112,7 @@
             changed(next);
             const piece = pieces.get(focusId);
             piece.node.focus({preventScroll: true});
-            feedback.textContent = coordinates(piece, piece.x, piece.y);
+
         }
 
         /** @param {string} id @param {string} kind @param {number} x @param {number} y
@@ -139,17 +145,67 @@
             feedback.textContent = "已原地拆为两个小箱子。";
         }
 
-        addChest.addEventListener("click", () => {
-            if (locked || drag) return;
-            for (let y = 0; y < rows; y++) {
-                for (let x = 0; x < columns; x++) {
-                    if (fits({width: 1}, x, y)) {
-                        drop(crypto.randomUUID(), "single", x, y);
-                        return;
-                    }
-                }
+        /** @returns {void} */
+        function updatePalette() {
+            for (const button of palette.querySelectorAll("button")) {
+                button.disabled = locked;
+                button.setAttribute("aria-pressed", String(button.dataset.block === selected));
             }
-            feedback.textContent = "当前单片没有空格可放置小箱子。";
+            grid.setAttribute("tabindex", selected && !locked ? "0" : "-1");
+            grid.style.cursor = selected && !locked ? "crosshair" : "";
+            cursor.style.display = document.activeElement === grid && selected && !locked
+                ? "" : "none";
+            cursor.setAttribute("x", cellX * unit);
+            cursor.setAttribute("y", cellY * unit);
+        }
+
+        for (const [kind, label] of Object.entries({
+            single: "箱子", barrel: "木桶", slab: "下半砖", stairs: "楼梯"
+        })) {
+            const button = document.createElement("button");
+            button.type = "button";
+            button.dataset.block = kind;
+            const icon = svgElement("svg", {viewBox: "0 0 26 26", "aria-hidden": "true"});
+            icon.append(svgElement("use", {href: "#" + kind}));
+            button.append(icon, document.createTextNode(label));
+            palette.append(button);
+            button.addEventListener("click", () => {
+                selected = kind;
+                updatePalette();
+                grid.focus({preventScroll: true});
+                feedback.textContent = `点击空格放置${label}，或用方向键选格后按回车。`;
+            });
+        }
+
+        /** @param {number} x @param {number} y @returns {void} */
+        function insert(x, y) {
+            if (!selected || locked || drag) return;
+            if (!fits({width: 1}, x, y)) {
+                feedback.textContent = "请选择空格。";
+                return;
+            }
+            drop(crypto.randomUUID(), selected, x, y);
+        }
+
+        grid.addEventListener("click", event => {
+            const p = local(event);
+            insert(Math.floor(p.x / unit), Math.floor(p.y / unit));
+        });
+        grid.addEventListener("focus", updatePalette);
+        grid.addEventListener("blur", () => { cursor.style.display = "none"; });
+        grid.addEventListener("keydown", event => {
+            if (locked || !selected) return;
+            if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                insert(cellX, cellY);
+                grid.focus({preventScroll: true});
+            } else if (Object.hasOwn(directions, event.key)) {
+                event.preventDefault();
+                const [dx, dy] = directions[event.key];
+                cellX = Math.max(0, Math.min(columns - 1, cellX + dx));
+                cellY = Math.max(0, Math.min(rows - 1, cellY + dy));
+                updatePalette();
+            }
         });
 
         /** @param {object} piece @param {number} x @param {number} y @returns {void} */
@@ -158,10 +214,7 @@
                 feedback.textContent = "请放到能容纳整个构件的空格。";
                 return;
             }
-            if (piece.x === x && piece.y === y) {
-                feedback.textContent = coordinates(piece, x, y);
-                return;
-            }
+            if (piece.x === x && piece.y === y) return;
             drop(piece.id, piece.kind, x, y);
         }
 
@@ -245,13 +298,6 @@
             });
         }
 
-        /** @param {string} value @param {number} x @param {number} y @returns {void} */
-        function tick(value, x, y) {
-            const label = svgElement("text", {x, y, "text-anchor": "middle"});
-            label.textContent = value;
-            axis.append(label);
-        }
-
         /** @param {object} region @returns {boolean} */
         function setBounds(region) {
             const width = Math.abs(region.second.z - region.first.z) + 1;
@@ -264,23 +310,14 @@
             const key = JSON.stringify([origin, rows, columns]);
             if (key !== extent) {
                 extent = key;
-                const digits = Math.max(String(origin.y).length, String(origin.y - rows + 1).length);
-                const gutter = Math.max(26, digits * 6 + 6);
                 const w = columns * unit;
                 const h = rows * unit;
-                svg.setAttribute("viewBox", `${-gutter} -22 ${gutter + w + 5} ${h + 27}`);
-                svg.style.setProperty("--board-width", (gutter + w + 5) * 1.5 + "px");
+                svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
+                svg.style.setProperty("--board-width", w * 1.5 + "px");
                 grid.setAttribute("width", w);
                 grid.setAttribute("height", h);
-                axis.replaceChildren();
-                tick("Y/Z", -gutter / 2, -7);
-                const stride = Math.ceil((String(origin.z + columns).length + 1) * 6 / unit);
-                for (let x = 0; x < columns; x += Math.max(1, stride)) {
-                    tick(String(origin.z + x), (x + .5) * unit, -7);
-                }
-                for (let y = 0; y < rows; y++) {
-                    tick(String(origin.y - y), -gutter / 2, (y + .5) * unit + 3);
-                }
+                cellX = Math.min(cellX, columns - 1);
+                cellY = Math.min(cellY, rows - 1);
             }
             return columns < width || rows < height;
         }
@@ -289,6 +326,9 @@
         function reset() {
             cancel();
             history = [];
+            selected = "";
+            cellX = 0;
+            cellY = 0;
         }
 
         undo.addEventListener("click", () => {
@@ -310,7 +350,7 @@
                 `${stage} · X = ${origin.x}${partial ? " · 局部" : ""}`;
             feedback.textContent = stale ? "选区已变更，重新预览后可移动构件。" : hint;
             undo.disabled = locked || !history.length;
-            addChest.disabled = locked;
+            updatePalette();
             const ids = new Set([...defaults.keys(), ...Object.keys(positions)]);
             for (const [id, piece] of pieces) {
                 if (!ids.has(id) || positions[id] === null) {
@@ -339,9 +379,7 @@
                 node.setAttribute("tabindex", locked || !piece.visible ? "-1" : "0");
                 node.setAttribute("aria-label", coordinates(piece, x, y));
             }
-            if (!stale && !Array.from(pieces.values()).some(piece => piece.visible)) {
-                feedback.textContent = "此范围内没有完整的示例构件。";
-            }
+
         }
         return {render, reset};
     }

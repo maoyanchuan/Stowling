@@ -20,10 +20,12 @@
     <link rel="stylesheet" href="shared/task-template.css">
     <link rel="stylesheet" href="shared/task-console-template.css">
     <link rel="stylesheet" href="shared/coordinate-template.css">
+    <link rel="stylesheet" href="shared/coordinate-slice-plan.css">
     <link rel="stylesheet" href="shared/settings-controls.css">
     <script src="shared/settings-controls.js"></script>
     <script src="shared/template-tabs.js" defer></script>
     <script src="shared/task-console-template.js" defer></script>
+    <script src="shared/coordinate-slice-plan.js"></script>
     <script src="shared/coordinate-scan-template.js"></script>
 </head>
 <body data-active-template="task">
@@ -3040,6 +3042,7 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
                                             </p>
                                             <p id="category-scan-status" class="category-scan-status"
                                                role="status" aria-live="polite"></p>
+                                            <section id="category-scan-map" hidden></section>
                                             <div id="category-scan-preview" hidden>
                                                 <div class="category-scan-preview-content">
                                                     <strong>待应用的扫描示例</strong>
@@ -5849,19 +5852,13 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
             return () => syncCategorySelect(control);
         },
         applyExample: region => {
-            // Synthetic offline layout only; no world recognition or navigation is performed.
-            const first = {};
-            const second = {};
-            for (const axis of ["x", "y", "z"]) {
-                first[axis] = Math.min(region.first[axis], region.second[axis]);
-                second[axis] = Math.max(region.first[axis], region.second[axis]);
-            }
+            const example = window.StowlingCoordinateSlicePlan.example(region);
             const binding = {
                 id: nextId(), name: "扫描绑定组（示例）", optionsEnabled: false,
-                markerRegion: {first: {...first, y: second.y}, second: {...second}},
-                storageRegion: {first: {...first}, second: {...second, y: first.y}},
+                markerRegion: example.markerRegion,
+                storageRegion: example.storageRegion,
                 standingPlan: {enabled: true, points: [{
-                    standingId: nextId(), position: {...first},
+                    standingId: nextId(), position: example.standing,
                     subregionsEnabled: false, expanded: false
                 }]}
             };

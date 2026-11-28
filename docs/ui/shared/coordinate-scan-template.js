@@ -16,6 +16,8 @@
         const details = root.querySelector("#category-details");
         const configuration = root.querySelector("#category-configuration");
         const content = root.querySelector("#category-configuration-content");
+        const mapHost = root.querySelector("#category-scan-map");
+        const map = window.StowlingCoordinateSlicePlan.create(mapHost);
         content.append(root.querySelector(".category-options"),
             root.querySelector(".category-binding-section"));
         let draft = {mode: "manual", previewRegion: null, appliedRegion: null, expanded: false};
@@ -65,6 +67,13 @@
             helpers.reveal(scan, scanning, animate);
             helpers.reveal(preview, Boolean(draft.previewRegion), animate);
             helpers.reveal(details, showDetails, animate);
+            const mapRegion = draft.previewRegion || draft.appliedRegion;
+            if (mapRegion) {
+                const stage = regionKey(mapRegion) !== regionKey(region) ? "stale"
+                    : draft.previewRegion ? "pending" : "applied";
+                map.render(mapRegion, stage);
+            }
+            helpers.reveal(mapHost, Boolean(mapRegion), animate);
             if (draft.previewRegion) {
                 const format = point => `${point.x}, ${point.y}, ${point.z}`;
                 range.textContent = `${format(draft.previewRegion.first)} → `

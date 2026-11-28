@@ -161,3 +161,58 @@ def test_scan_preview_adapts_to_both_themes_and_narrow_screens(
         assert bounds is not None
         assert bounds["x"] >= 0
         assert bounds["x"] + bounds["width"] <= width
+
+
+def test_slice_plan_explains_each_role_and_supports_keyboard_selection(scan_page: Any) -> None:
+    page = scan_page
+    choose_mode(page, "scan")
+    assert page.locator("#category-scan-map").is_hidden()
+    page.locator("#category-scan-start").click()
+    assert page.locator(".slice-cell").count() == 60
+    for role in ["storage", "marker", "standing", "support"]:
+        assert page.locator(f'.slice-cell[data-roles~="{role}"]').count() > 0
+    standing = page.locator('.slice-cell[data-roles="standing"]')
+    standing.click()
+    assert "X 40 / Y -44 / Z 36" in page.locator(".slice-selection").inner_text()
+    page.keyboard.press("ArrowUp")
+    assert "空位" in page.locator(".slice-selection").inner_text()
+    assert "Y -43 / Z 36" in page.locator(".slice-selection").inner_text()
+    assert page.locator('.slice-cell[tabindex="0"]').count() == 1
+    assert page.locator('.slice-cell[aria-pressed="true"]').count() == 1
+
+
+def test_applied_slice_matches_the_generated_binding_and_remains_visible(scan_page: Any) -> None:
+    page = scan_page
+    apply_example(page)
+    assert page.locator("#category-scan-map").is_visible()
+    assert page.locator("#category-scan-map").get_attribute("data-stage") == "applied"
+    page.locator("#category-generated-toggle").click()
+    page.locator(".category-binding-toggle").click()
+    cases = [("storage", "-43", "-42", "33"), ("marker", "-41", "-40", "39")]
+    for region, first_y, second_y, z in cases:
+        for corner, y in [("first", first_y), ("second", second_y)]:
+            prefix = f'[data-binding-region="{region}"][data-binding-corner="{corner}"]'
+            assert page.locator(prefix + '[data-binding-axis="y"]').input_value() == y
+            assert page.locator(prefix + '[data-binding-axis="z"]').input_value() == z
+            assert page.locator(f'.slice-cell[data-roles~="{region}"]'
+                                f'[data-y="{y}"][data-z="{z}"]').count() == 1
+    page.locator("#save-coordinate").click()
+    assert page.locator("#category-scan-map").is_visible()
+    page.locator("#category-overall-first-z").fill("31")
+    assert page.locator("#category-scan-map").get_attribute("data-stage") == "stale"
+    assert page.locator("#save-coordinate").is_disabled()
+
+
+def test_slice_explicitly_shows_overlap_and_limits_large_selections(scan_page: Any) -> None:
+    page = scan_page
+    choose_mode(page, "scan")
+    page.locator("#category-overall-second-y").fill("-44")
+    page.locator("#category-overall-second-z").fill("30")
+    page.locator("#category-scan-start").click()
+    assert page.locator(".slice-cell").count() == 1
+    assert page.locator(".slice-cell .slice-tile").all_text_contents() == ["箱", "标", "站"]
+    page.locator("#category-overall-second-y").fill("1000")
+    page.locator("#category-overall-second-z").fill("10000")
+    page.locator("#category-scan-start").click()
+    assert page.locator(".slice-cell").count() == 96
+    assert "仅展示单片局部" in page.locator(".slice-note").inner_text()

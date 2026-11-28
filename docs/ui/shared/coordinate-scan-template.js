@@ -17,7 +17,11 @@
         const configuration = root.querySelector("#category-configuration");
         const content = root.querySelector("#category-configuration-content");
         const mapHost = root.querySelector("#category-scan-map");
-        const map = window.StowlingCoordinateSlicePlan.create(mapHost);
+        const map = window.StowlingCoordinateSlicePlan.create(mapHost, cells => {
+            if (draft.previewRegion) draft.previewCells = cells;
+            else draft.appliedCells = cells;
+            update(false);
+        });
         content.append(root.querySelector(".category-options"),
             root.querySelector(".category-binding-section"));
         let draft = {mode: "manual", previewRegion: null, appliedRegion: null, expanded: false};
@@ -71,7 +75,8 @@
             if (mapRegion) {
                 const stage = regionKey(mapRegion) !== regionKey(region) ? "stale"
                     : draft.previewRegion ? "pending" : "applied";
-                map.render(mapRegion, stage);
+                map.render(mapRegion, stage, draft.previewRegion
+                    ? draft.previewCells : draft.appliedCells);
             }
             helpers.reveal(mapHost, Boolean(mapRegion), animate);
             if (draft.previewRegion) {
@@ -89,7 +94,9 @@
             } else if (draft.appliedRegion && !freshApplied) {
                 message = "总选区已改变，已有配置待更新。请重新预览并应用后保存。";
             } else if (draft.appliedRegion) {
-                message = "已应用示例配置，可展开微调，确认后保存坐标。";
+                message = Object.keys(draft.appliedCells || {}).length
+                    ? "单片结构已手动调整，点击保存坐标可保留本次草稿。"
+                    : "已应用示例配置，可直接编辑单片结构，或展开查看区域参数。";
             }
             status.textContent = message;
             status.dataset.tone = (!region || (draft.previewRegion && !freshPreview)
@@ -102,6 +109,8 @@
             const region = currentRegion();
             if (!region) return;
             draft.previewRegion = structuredClone(region);
+            draft.previewCells = {};
+            map.reset();
             update();
         }
 
@@ -111,7 +120,9 @@
                     || regionKey(draft.previewRegion) !== regionKey(currentRegion())) return;
             helpers.applyExample(draft.previewRegion);
             draft.appliedRegion = structuredClone(draft.previewRegion);
+            draft.appliedCells = structuredClone(draft.previewCells || {});
             draft.previewRegion = null;
+            draft.previewCells = {};
             draft.expanded = false;
             update();
             toggle.focus();
@@ -122,6 +133,7 @@
             draft = value ? structuredClone(value)
                 : {mode: "manual", previewRegion: null, appliedRegion: null, expanded: false};
             mode.value = draft.mode === "scan" ? "scan" : "manual";
+            map.reset();
             syncSelect();
             update(false);
         }
@@ -135,6 +147,8 @@
         apply.addEventListener("click", applyPreview);
         discard.addEventListener("click", () => {
             draft.previewRegion = null;
+            draft.previewCells = {};
+            map.reset();
             update();
             start.focus();
         });

@@ -235,9 +235,95 @@ def test_slice_explicitly_shows_overlap_and_limits_large_selections(scan_page: A
     page.locator("#category-overall-second-z").fill("30")
     page.locator("#category-scan-start").click()
     assert page.locator(".slice-cell").count() == 1
-    assert page.locator(".slice-cell .slice-tile").all_text_contents() == ["箱", "标", "站"]
+    assert page.locator(".slice-cell").inner_text() == ""
+    assert page.locator(".slice-cell .slice-tile").evaluate_all(
+        "tiles => tiles.map(tile => tile.dataset.role)",
+    ) == ["storage", "marker", "standing"]
     page.locator("#category-overall-second-y").fill("1000")
     page.locator("#category-overall-second-z").fill("10000")
     page.locator("#category-scan-start").click()
     assert page.locator(".slice-cell").count() == 96
     assert "仅展示单片局部" in page.locator(".slice-note").inner_text()
+
+
+def test_color_editor_paints_clears_and_undoes_without_cell_text(scan_page: Any) -> None:
+    page = scan_page
+    page.locator('[data-coordinate-id="scanned-zone-demo"]').click()
+    target = page.locator('.slice-cell[data-y="69"][data-z="1"]')
+    assert page.locator(".slice-cell").all_text_contents() == [""] * 60
+    page.locator('[data-tool="storage"]').click()
+    target.click()
+    assert target.get_attribute("data-roles") == "storage"
+    assert "储存区" in target.get_attribute("aria-label")
+    assert "已手动调整" in page.locator(".slice-stage").inner_text()
+    page.locator('[data-tool="erase"]').click()
+    target.click()
+    assert target.get_attribute("data-roles") == ""
+    page.locator(".slice-undo").click()
+    assert target.get_attribute("data-roles") == "storage"
+    page.locator(".slice-undo").click()
+    assert target.get_attribute("data-roles") == ""
+    assert page.locator(".slice-undo").is_disabled()
+
+
+def test_color_editor_saves_and_copies_independent_structure_drafts(scan_page: Any) -> None:
+    page = scan_page
+    page.locator('[data-coordinate-id="scanned-zone-demo"]').click()
+    target = page.locator('.slice-cell[data-y="69"][data-z="1"]')
+    page.locator('[data-tool="storage"]').click()
+    target.click()
+    page.locator("#save-coordinate").click()
+    assert target.get_attribute("data-roles") == "storage"
+    page.locator("#duplicate-coordinate").click()
+    assert target.get_attribute("data-roles") == "storage"
+    page.locator('[data-tool="marker"]').click()
+    target.click()
+    page.locator("#save-coordinate").click()
+    page.locator('[data-coordinate-id="scanned-zone-demo"]').click()
+    assert target.get_attribute("data-roles") == "storage"
+    page.locator(".coordinate-item").filter(has_text="已扫描分类区（示例） 副本").click()
+    assert target.get_attribute("data-roles") == "marker"
+    assert page.locator("#category-setup-mode").input_value() == "scan"
+
+
+def test_preview_edit_discard_restores_applied_structure_and_rescan_starts_fresh(
+    scan_page: Any,
+) -> None:
+    page = scan_page
+    page.locator('[data-coordinate-id="scanned-zone-demo"]').click()
+    target = page.locator('.slice-cell[data-y="69"][data-z="1"]')
+    page.locator('[data-tool="storage"]').click()
+    target.click()
+    page.locator("#category-scan-start").click()
+    assert target.get_attribute("data-roles") == ""
+    page.locator('[data-tool="marker"]').click()
+    target.click()
+    page.locator("#category-scan-discard").click()
+    assert target.get_attribute("data-roles") == "storage"
+    page.locator("#category-scan-start").click()
+    page.locator('[data-tool="support"]').click()
+    target.click()
+    page.locator("#category-scan-apply").click()
+    assert target.get_attribute("data-roles") == "support"
+    page.locator("#category-overall-second-z").fill("10")
+    assert page.locator('[data-tool="storage"]').is_disabled()
+    assert page.locator(".slice-undo").is_disabled()
+    assert page.locator("#save-coordinate").is_disabled()
+
+
+def test_editor_keyboard_activation_paints_but_arrow_keys_only_select(scan_page: Any) -> None:
+    page = scan_page
+    page.locator('[data-coordinate-id="scanned-zone-demo"]').click()
+    target = page.locator('.slice-cell[data-y="69"][data-z="1"]')
+    page.locator('[data-tool="standing"]').click()
+    target.focus()
+    page.keyboard.press("Space")
+    assert target.get_attribute("data-roles") == "standing"
+    page.keyboard.press("ArrowRight")
+    neighbor = page.locator('.slice-cell[data-y="69"][data-z="2"]')
+    assert neighbor.get_attribute("data-roles") == ""
+    page.keyboard.press("Enter")
+    assert neighbor.get_attribute("data-roles") == "standing"
+    page.locator('[data-tool="view"]').click()
+    target.click()
+    assert target.get_attribute("data-roles") == "standing"

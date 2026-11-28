@@ -141,27 +141,54 @@
     background: var(--slice-support);
 }
 
-.slice-plan .slice-legend {
+.slice-plan .slice-tools {
     display: flex;
     flex-wrap: wrap;
-    gap: 10px 18px;
-    color: var(--text);
+    gap: 6px;
+}
+
+.slice-plan button.slice-tool {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-height: 40px;
+    padding: 8px 10px;
     font-size: 12px;
 }
 
-.slice-plan .slice-legend-item {
-    display: inline-flex;
-    align-items: center;
-    gap: 7px;
+.slice-plan button.slice-tool[aria-pressed="true"] {
+    border-color: var(--accent);
+    color: var(--theme-selected-text, var(--text));
+    background: var(--theme-selected, var(--accent-soft));
+}
+
+.slice-plan[data-editing="true"] button.slice-cell {
+    cursor: crosshair;
 }
 
 .slice-plan .slice-swatch {
-    display: grid;
-    place-items: center;
-    width: 22px;
-    height: 22px;
+    flex: 0 0 auto;
+    width: 16px;
+    height: 16px;
     border-radius: 3px;
-    font-size: 11px;
+}
+
+.slice-plan .slice-swatch[data-role="erase"] {
+    border: 1px dashed var(--muted);
+    background: transparent;
+}
+
+.slice-plan .slice-edit-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 12px;
+}
+
+.slice-plan .slice-edit-status {
+    color: var(--muted);
+    font-size: 12px;
 }
 
 .slice-plan .slice-selection {

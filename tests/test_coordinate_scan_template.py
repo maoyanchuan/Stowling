@@ -43,6 +43,11 @@ def test_pre_scanned_location_opens_with_a_complete_offline_snapshot(scan_page: 
     assert page.locator("#category-scan-map").is_visible()
     assert page.locator("#category-scan-map").get_attribute("data-stage") == "applied"
     assert page.locator("#category-scan-preview").is_hidden()
+    figure = page.locator(".classic-slice img")
+    assert figure.is_visible()
+    assert figure.evaluate("img => img.complete && img.naturalWidth > 0")
+    assert page.locator(".slice-tools").is_hidden()
+    page.get_by_role("button", name="展开坐标草稿").click()
     assert page.locator(".slice-cell").count() == 60
     assert "X = 0" in page.locator(".slice-subtitle").inner_text()
     assert page.locator("#save-coordinate").is_enabled()
@@ -197,6 +202,7 @@ def test_slice_plan_explains_each_role_and_supports_keyboard_selection(scan_page
     for role in ["storage", "marker", "standing", "support"]:
         assert page.locator(f'.slice-cell[data-roles~="{role}"]').count() > 0
     standing = page.locator('.slice-cell[data-roles="standing"]')
+    page.get_by_role("button", name="展开坐标草稿").click()
     standing.click()
     assert "X 40 / Y -44 / Z 36" in page.locator(".slice-selection").inner_text()
     page.keyboard.press("ArrowUp")
@@ -249,6 +255,7 @@ def test_slice_explicitly_shows_overlap_and_limits_large_selections(scan_page: A
 def test_color_editor_paints_clears_and_undoes_without_cell_text(scan_page: Any) -> None:
     page = scan_page
     page.locator('[data-coordinate-id="scanned-zone-demo"]').click()
+    page.get_by_role("button", name="展开坐标草稿").click()
     target = page.locator('.slice-cell[data-y="69"][data-z="1"]')
     assert page.locator(".slice-cell").all_text_contents() == [""] * 60
     page.locator('[data-tool="storage"]').click()
@@ -269,6 +276,7 @@ def test_color_editor_paints_clears_and_undoes_without_cell_text(scan_page: Any)
 def test_color_editor_saves_and_copies_independent_structure_drafts(scan_page: Any) -> None:
     page = scan_page
     page.locator('[data-coordinate-id="scanned-zone-demo"]').click()
+    page.get_by_role("button", name="展开坐标草稿").click()
     target = page.locator('.slice-cell[data-y="69"][data-z="1"]')
     page.locator('[data-tool="storage"]').click()
     target.click()
@@ -291,6 +299,7 @@ def test_preview_edit_discard_restores_applied_structure_and_rescan_starts_fresh
 ) -> None:
     page = scan_page
     page.locator('[data-coordinate-id="scanned-zone-demo"]').click()
+    page.get_by_role("button", name="展开坐标草稿").click()
     target = page.locator('.slice-cell[data-y="69"][data-z="1"]')
     page.locator('[data-tool="storage"]').click()
     target.click()
@@ -314,6 +323,7 @@ def test_preview_edit_discard_restores_applied_structure_and_rescan_starts_fresh
 def test_editor_keyboard_activation_paints_but_arrow_keys_only_select(scan_page: Any) -> None:
     page = scan_page
     page.locator('[data-coordinate-id="scanned-zone-demo"]').click()
+    page.get_by_role("button", name="展开坐标草稿").click()
     target = page.locator('.slice-cell[data-y="69"][data-z="1"]')
     page.locator('[data-tool="standing"]').click()
     target.focus()

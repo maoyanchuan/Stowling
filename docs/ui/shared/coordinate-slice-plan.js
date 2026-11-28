@@ -68,7 +68,7 @@
         host.classList.add("slice-plan");
         const heading = element("div", "slice-heading");
         const titles = element("div", "");
-        const title = element("h3", "", "单片结构平面图");
+        const title = element("h3", "", "坐标草稿");
         title.id = `${host.id}-title`;
         host.setAttribute("aria-labelledby", title.id);
         const subtitle = element("p", "slice-subtitle");
@@ -118,7 +118,22 @@
         selection.setAttribute("aria-live", "polite");
         const note = element("p", "slice-note");
         const panHint = element("p", "slice-pan-hint", "左右滑动查看完整单片");
-        host.append(heading, toolbar, viewport, panHint, selection, actions, note);
+        const expand = element("button", "slice-draft-toggle", "展开坐标草稿");
+        expand.type = "button";
+        const editor = element("div", "slice-draft-content");
+        editor.id = host.id + "-editor";
+        expand.setAttribute("aria-controls", editor.id);
+        expand.setAttribute("aria-expanded", "false");
+        const reveal = window.StowlingSettingsControls.createReveal();
+        reveal(editor, false, false);
+        expand.addEventListener("click", () => {
+            const open = expand.getAttribute("aria-expanded") === "false";
+            expand.setAttribute("aria-expanded", String(open));
+            expand.textContent = open ? "收起坐标草稿" : "展开坐标草稿";
+            reveal(editor, open);
+        });
+        editor.append(toolbar, viewport, panHint, selection, actions, note);
+        host.append(heading, expand, editor);
         let previous = "";
         let buttons = [];
         let selected = null;

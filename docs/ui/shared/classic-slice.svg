@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-18 -9 372 234"
+     role="img" aria-labelledby="title desc">
+    <title id="title">经典单片结构侧视图</title>
+    <desc id="desc">十个木箱左右对称错层排列，紫黑方块穿插其间。
+        底部中央有三个相连的玻璃方块，两侧各有一个低矮的白色构件。</desc>
+    <defs>
+        <linearGradient id="wood" x2="0" y2="1" gradientUnits="objectBoundingBox">
+            <stop stop-color="#dfab58"/>
+            <stop offset="1" stop-color="#aa6c31"/>
+        </linearGradient>
+        <linearGradient id="pane" x2="1" y2="1">
+            <stop stop-color="#8dbdbe" stop-opacity=".36"/>
+            <stop offset=".55" stop-color="#67a3a9" stop-opacity=".12"/>
+            <stop offset="1" stop-color="#bce3e0" stop-opacity=".30"/>
+        </linearGradient>
+        <g id="chest" shape-rendering="crispEdges">
+            <path fill="#34291e" d="M0 1h48v23H0z"/>
+            <path fill="url(#wood)" d="M2 3h44v18H2z"/>
+            <path fill="#efc078" d="M3 3h42v2H3z"/>
+            <path fill="#80532d" d="M2 9h44v3H2zM3 20h42v2H3z"/>
+            <path fill="#c58a45" d="M5 14h12v1H5zM30 16h10v1H30zM8 6h9v1H8z"/>
+            <path fill="#493e34" d="M21 8h6v8h-6z"/>
+            <path fill="#d9dacf" d="M22 8h4v6h-4z"/>
+            <path fill="#fff1cc" d="M22 8h3v2h-3z"/>
+        </g>
+        <g id="checker" shape-rendering="crispEdges">
+            <path fill="#1e1924" d="M0 0h26v26H0z"/>
+            <path fill="#cf46ce" d="M1 1h12v12H1zM13 13h12v12H13z"/>
+            <path fill="#e67ee4" d="M1 1h12v2H1zM13 13h12v2H13z"/>
+        </g>
+        <g id="glass">
+            <rect x="1" y="1" width="24" height="24" fill="url(#pane)"
+                  stroke="#b4dcdb" stroke-width="2"/>
+            <path stroke="#d9f3ed" opacity=".72" d="m4 10 5-5m10 16 3-3"/>
+        </g>
+        <g id="low" shape-rendering="crispEdges">
+            <path fill="#543a2c" d="M0 0h24v13H0z"/>
+            <path fill="#ba8157" d="M1 5h22v6H1z"/>
+            <path fill="#f2e5ce" d="M1 1h22v4h-3v2h-5V5h-5v2H6V5H1z"/>
+        </g>
+        <g id="side">
+            <use href="#checker" x="76" y="9"/>
+            <use href="#chest" x="103" y="10"/>
+            <use href="#chest" x="26" y="37"/>
+            <use href="#checker" x="50" y="61"/>
+            <use href="#chest" x="1" y="89"/>
+            <use href="#checker" x="25" y="113"/>
+            <use href="#chest" x="1" y="140"/>
+            <use href="#checker" x="0" y="164"/>
+            <use href="#chest" x="26" y="192"/>
+            <use href="#checker" x="76" y="190"/>
+            <use href="#low" x="104" y="178"/>
+        </g>
+    </defs>
+    <use href="#side"/>
+    <use href="#checker" x="234" y="9"/>
+    <use href="#chest" x="185" y="10"/>
+    <use href="#chest" x="262" y="37"/>
+    <use href="#checker" x="260" y="61"/>
+    <use href="#chest" x="287" y="89"/>
+    <use href="#checker" x="285" y="113"/>
+    <use href="#chest" x="287" y="140"/>
+    <use href="#checker" x="310" y="164"/>
+    <use href="#chest" x="262" y="192"/>
+    <use href="#checker" x="234" y="190"/>
+    <use href="#low" x="208" y="178"/>
+    <use href="#glass" x="129" y="165"/>
+    <use href="#glass" x="155" y="165"/>
+    <use href="#glass" x="181" y="165"/>
+</svg>

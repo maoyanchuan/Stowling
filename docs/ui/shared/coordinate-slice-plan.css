@@ -1,3 +1,46 @@
+.classic-slice {
+    margin: 0;
+    overflow: hidden;
+    border: 1px solid #34413f;
+    border-radius: var(--radius);
+    color: #edf3ec;
+    background-color: #283433;
+    background-image: radial-gradient(#465451 0.8px, transparent 1px);
+    background-size: 16px 16px;
+}
+
+.classic-slice figcaption {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 16px 20px;
+    color: #dbe6df;
+    background: #263130;
+    border-bottom: 1px solid #41504c;
+}
+
+.classic-slice figcaption strong {
+    font-size: 15px;
+    color: #f0f4ea;
+}
+
+.classic-slice figcaption span {
+    font-size: 12px;
+}
+
+.classic-slice img {
+    display: block;
+    width: min(94%, 510px);
+    height: auto;
+    margin: clamp(12px, 2vw, 24px) auto;
+}
+
+.slice-plan .slice-draft-content {
+    display: grid;
+    gap: 12px;
+}
+
 .slice-plan {
     --slice-storage: #e9c184;
     --slice-storage-text: #513715;

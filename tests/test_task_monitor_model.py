@@ -49,6 +49,35 @@ def _run_model(expression: str) -> Any:
     return json.loads(completed.stdout)
 
 
+def test_scan_history_is_deduplicated_sorted_and_stays_cleared_until_new_scan() -> None:
+    result = _run_model("""
+        (() => {
+            const logs = window.StowlingTaskMonitorModel.createLogBuffer(5);
+            logs.ingest([{runId: 'run-a', taskName: '任务', state: 'RUNNING'}], [], [],
+                '2026-11-28T10:00:00.300Z');
+            const first = {id: 'scan-a', operation: 'PREVIEW', state: 'PARTIAL',
+                finishedAt: '2026-11-28T10:00:00Z', message: '9 / 10 片有效'};
+            const history = {session: 'session-a', scans: [first]};
+            const added = logs.ingestScans(history);
+            const repeated = logs.ingestScans(history);
+            const entries = logs.entries();
+            logs.clear();
+            const replayed = logs.ingestScans(history);
+            const cleared = logs.entries();
+            logs.ingestScans({...history, scans: [{...first, id: 'scan-b',
+                state: 'FAILED', operation: 'CONFIRM', finishedAt: '2026-11-28T10:02:00Z'}]});
+            return {added, repeated, replayed, entries, cleared, fresh: logs.entries()};
+        })()
+    """)
+    assert result["added"] == 1
+    assert result["repeated"] == result["replayed"] == 0
+    assert result["entries"][0]["scanId"] == "scan-a"
+    assert result["entries"][0]["operation"] == "PREVIEW"
+    assert result["entries"][1]["kind"] == "run"
+    assert result["cleared"] == []
+    assert result["fresh"][0]["scanId"] == "scan-b"
+
+
 def test_default_export_keeps_all_cycles_and_raw_quantities_for_the_selected_run() -> None:
     result = _run_model(
         """
@@ -318,6 +347,30 @@ def test_old_runs_report_missing_metadata_without_using_current_configuration() 
     )
     assert "Stowling 版本：未记录" in result
     assert "该运行未记录启动配置快照" in result
+
+
+@pytest.mark.parametrize("has_run", [False, True])
+def test_monitor_export_downloads_latest_scan_without_fetching_task_data(has_run: bool) -> None:
+    source = MODEL.with_name("tasks.js").read_text(encoding="utf-8")
+    start = source.index("    async function exportMonitorLogs()")
+    end = source.index("\n    }", start) + len("\n    }")
+    handler = source[start:end]
+    runs = [{"runId": "old", "state": "SUCCEEDED", "updatedAt": "2026-11-28T09:00:00Z"}]
+    result = _run_model(f"""
+        (async () => {{
+            const Monitor = window.StowlingTaskMonitorModel;
+            const state = {{runs: {json.dumps(runs if has_run else [])}, scans: [
+                {{id: 'scan-a', finishedAt: '2026-11-28T10:00:00Z'}}]}};
+            const requests = [];
+            const Stowling = {{request: async path => {{ requests.push(path); }},
+                handleError: error => {{ throw error; }} }};
+            window.StowlingScanDiagnostics = {{download: async id => requests.push('scan:' + id)}};
+            {handler}
+            await exportMonitorLogs();
+            return requests;
+        }})()
+    """)
+    assert result == ["scan:scan-a"]
 
 
 def test_full_diagnostic_export_is_independent_of_the_small_visible_log_buffer() -> None:

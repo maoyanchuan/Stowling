@@ -491,6 +491,9 @@
      * @returns {string}
      */
     function stateLabel(kind, state) {
+        if (kind === "scan") {
+            return {SUCCEEDED: "成功", PARTIAL: "部分跳过", FAILED: "失败"}[state] || state;
+        }
         const labels = kind === "trigger"
             ? TRIGGER_STATE_LABELS
             : RUN_STATE_LABELS;
@@ -510,6 +513,7 @@
      * @returns {string}
      */
     function kindLabel(kind) {
+        if (kind === "scan") return "扫描";
         return kind === "trigger" ? "监听" : "运行";
     }
 
@@ -553,6 +557,7 @@
          */
         function append(entry) {
             records.push(entry);
+            records.sort((left, right) => Date.parse(left.time) - Date.parse(right.time));
             if (records.length > maximum) {
                 records.splice(0, records.length - maximum);
             }
@@ -672,6 +677,10 @@
                     state: entry.state,
                     message: entry.message
                 };
+                if (entry.scanId) {
+                    copy.scanId = entry.scanId;
+                    copy.operation = entry.operation;
+                }
                 if (entry.completedSteps !== undefined) {
                     copy.completedSteps = entry.completedSteps;
                 }
@@ -689,6 +698,21 @@
         function clearEntries() {
             // Keep the baseline so unchanged snapshots cannot replay cleared rows.
             records.length = 0;
+        }
+
+        /** @param {object} history @returns {number} */
+        function ingestScans(history) {
+            let added = 0;
+            for (const scan of asObjects(history.scans)) {
+                const key = `scan:${history.session}:${scan.id}`;
+                if (baseline.has(key)) continue;
+                baseline.set(key, "recorded");
+                append({id: key, scanId: scan.id, operation: scan.operation,
+                    time: asText(scan.finishedAt), kind: "scan", taskName: "分类区扫描",
+                    priority: "NORMAL", state: asText(scan.state), message: asText(scan.message)});
+                added += 1;
+            }
+            return added;
         }
 
         /**
@@ -714,6 +738,7 @@
 
         return Object.freeze({
             ingest,
+            ingestScans,
             entries: readEntries,
             clear: clearEntries,
             exportText

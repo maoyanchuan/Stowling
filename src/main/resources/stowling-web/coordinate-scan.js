@@ -33,6 +33,7 @@
         const configuration = root.querySelector("#category-configuration");
         const layer = root.querySelector("#category-scan-layer");
         const results = root.querySelector("#category-scan-results");
+        const diagnostics = window.StowlingScanDiagnostics.mount(root, helpers.reveal);
         root.querySelector("#category-configuration-content").append(
             root.querySelector(".category-options"), root.querySelector(".category-binding-section"));
         let draft = null;
@@ -343,6 +344,7 @@
             const key = regionKey(currentRegion());
             const requestId = ++generation;
             let failure = "";
+            let diagnosticId = "";
             pending = true;
             status.textContent = confirming ? "正在按最终母版逐片核对…" : "正在读取游戏选区…";
             update(false);
@@ -351,6 +353,7 @@
                     method: "POST", headers: {"Content-Type": "application/json"},
                     body: JSON.stringify(request)
                 });
+                diagnosticId = result.diagnosticId || "";
                 if (requestId !== generation || mode.value !== "scan"
                         || key !== regionKey(currentRegion())) return;
                 acceptScan(result.scan);
@@ -366,6 +369,7 @@
             } catch (error) {
                 if (requestId === generation) failure = error.message || "扫描失败，请重试。";
             } finally {
+                void diagnostics.refresh(diagnosticId);
                 if (requestId === generation) {
                     pending = false;
                     update(false);
@@ -376,6 +380,7 @@
 
         /** @param {object} value @param {string} kind @returns {void} */
         function load(value, kind) {
+            if (kind === "category-zone") void diagnostics.refresh();
             generation++;
             pending = false;
             selectedId = value.id;

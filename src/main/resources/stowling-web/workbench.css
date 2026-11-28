@@ -1,4 +1,10 @@
 /* Shared task-card presentation. Loaded after the legacy component styles. */
+.rail-scan-export {
+    padding: 6px 10px;
+    margin-top: 6px;
+    font-size: 12px;
+}
+
 :root {
     color-scheme: dark;
     --bg: #111214;

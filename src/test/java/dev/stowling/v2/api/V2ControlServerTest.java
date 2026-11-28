@@ -47,6 +47,38 @@ import org.junit.jupiter.api.io.TempDir;
 
 class V2ControlServerTest {
     @Test
+    void scanDiagnosticsAreAuthenticatedRetainFailedReadsAndStayOutOfTaskRuns() throws Exception {
+        var store = new ConfigStore(directory.resolve("scan-diagnostics.json"));
+        store.loadOrReset();
+        var service = new V2ControlServiceImpl(store, new TaskRunManager(new FailedNavigation()),
+                List::of);
+        try (var fixture = new Fixture(service)) {
+            String path = "/v1/category-zones/scan-diagnostics";
+            assertEquals(401, fixture.send(path, "GET", null, false).statusCode());
+            assertEquals(405, fixture.send(path, "POST", "{}", true).statusCode());
+            assertEquals(400, fixture.send(path, "GET", "{}", true).statusCode());
+            var request = new JsonObject();
+            request.add("area", new Gson().toJsonTree(
+                    dev.stowling.v2.scan.CategoryScanEngineTest.AREA));
+            assertEquals(400, fixture.send("/v1/category-zones/scan", "POST",
+                    request.toString(), true).statusCode());
+            var history = object(fixture.send(path, "GET", null, true));
+            var summary = history.getAsJsonArray("scans").get(0).getAsJsonObject();
+            assertEquals("FAILED", summary.get("state").getAsString());
+            String detailPath = path + "/" + summary.get("id").getAsString();
+            assertEquals(401, fixture.send(detailPath, "GET", null, false).statusCode());
+            var detail = object(fixture.send(detailPath, "GET", null, true));
+            assertEquals(summary.get("id"), detail.getAsJsonObject("summary").get("id"));
+            assertEquals(404, fixture.send(path + "/" + UUID.randomUUID(), "GET", null, true)
+                    .statusCode());
+            assertTrue(object(fixture.send("/v1/task-runs", "GET", null, true))
+                    .getAsJsonArray("runs").isEmpty());
+            assertTrue(object(fixture.send("/v1/task-runs", "GET", null, true))
+                    .getAsJsonArray("queue").isEmpty());
+        }
+    }
+
+    @Test
     void scanRequiresAuthenticationAndSavingRechecksTheWorldWithoutFillingHoles() throws Exception {
         var store = new ConfigStore(directory.resolve("scanned.json"));
         store.loadOrReset();
@@ -75,6 +107,13 @@ class V2ControlServerTest {
             assertEquals(400, fixture.send(path, "POST", fractional.toString(), true).statusCode());
             var preview = fixture.send(path, "POST", request.toString(), true);
             assertEquals(200, preview.statusCode(), preview.body());
+            String previewId = object(preview).get("diagnosticId").getAsString();
+            var previewLog = object(fixture.send(path + "-diagnostics/" + previewId,
+                    "GET", null, true));
+            assertEquals(previewId, previewLog.getAsJsonObject("summary").get("id").getAsString());
+            assertEquals(previewId, previewLog.getAsJsonObject("result")
+                    .get("diagnosticId").getAsString());
+            assertFalse(previewLog.getAsJsonObject("world").getAsJsonArray("blocks").isEmpty());
             request.add("scan", object(preview).get("scan"));
             observed.set(dev.stowling.v2.scan.CategoryScanEngineTest.world(2, -1));
             var checked = fixture.send(path, "POST", request.toString(), true);
@@ -115,6 +154,12 @@ class V2ControlServerTest {
             assertEquals(9, new ConfigStore(directory.resolve("scanned.json")).read().config()
                     .categoryZones().getFirst().bindings().size());
             assertEquals(4, reads.get());
+            var history = object(fixture.send(path + "-diagnostics", "GET", null, true));
+            assertEquals(3, history.getAsJsonArray("scans").size());
+            assertEquals("SAVE", history.getAsJsonArray("scans").get(0).getAsJsonObject()
+                    .get("operation").getAsString());
+            assertEquals(404, fixture.send(path + "-diagnostics/" + previewId,
+                    "GET", null, true).statusCode());
         }
     }
 

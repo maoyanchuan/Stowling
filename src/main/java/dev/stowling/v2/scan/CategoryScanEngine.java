@@ -30,6 +30,11 @@ public final class CategoryScanEngine {
     }
 
     public static CategoryScanResult preview(CategoryScanSnapshot world, CategoryZoneOptions options) {
+        return preview(world, options, (stage, data) -> {});
+    }
+
+    public static CategoryScanResult preview(CategoryScanSnapshot world, CategoryZoneOptions options,
+            java.util.function.BiConsumer<String, Object> trace) {
         List<CategoryScanBlock> containers = world.blocks().stream()
                 .filter(CategoryScanBlock::container).toList();
         if (containers.isEmpty()) throw new IllegalArgumentException("总选区内没有储存容器");
@@ -108,6 +113,10 @@ public final class CategoryScanEngine {
         candidates.sort(Comparator.comparingInt(Candidate::score).reversed()
                 .thenComparing(Comparator.comparingInt(Candidate::hits).reversed())
                 .thenComparingInt(Candidate::step));
+        trace.accept("LAYOUT_CANDIDATES", candidates.stream().limit(16).map(candidate -> Map.of(
+                "axis", candidate.axis(), "step", candidate.step(), "count", candidate.count(),
+                "mother", candidate.mother(), "hits", candidate.hits(), "score", candidate.score(),
+                "storageLayout", candidate.layout())).toList());
         if (candidates.isEmpty()) {
             throw new IllegalArgumentException("没有唯一的重复储存布局；请核对选区或使用手动配置");
         }
@@ -135,6 +144,10 @@ public final class CategoryScanEngine {
         for (int index = 0; index < best.layout().size(); index++) {
             var container = best.layout().get(index);
             var choice = assignment.choices().get(index);
+            trace.accept("MARKER_CANDIDATES", Map.of("group", index + 1,
+                    "storageArea", container.bounds(), "choices", choices.get(index),
+                    "selected", alternatives.get(index),
+                    "ambiguous", assignment.ambiguous().contains(index)));
             UUID id = UUID.randomUUID();
             var markers = choice.area();
             if (assignment.ambiguous().contains(index)) {
@@ -152,7 +165,7 @@ public final class CategoryScanEngine {
         }
         var scan = new CategoryScanDefinition(world.area(), world.dimension(), best.axis(),
                 best.step(), best.mother(), best.count(), templates, blocks, List.of(), null, anchors);
-        return evaluate(world, scan, options);
+        return evaluate(world, scan, options, trace);
     }
 
     private static List<CategoryMarker> candidateEvidence(List<CategoryMarker> markers,
@@ -279,6 +292,12 @@ public final class CategoryScanEngine {
 
     public static CategoryScanResult evaluate(CategoryScanSnapshot world,
             CategoryScanDefinition requested, CategoryZoneOptions global) {
+        return evaluate(world, requested, global, (stage, data) -> {});
+    }
+
+    public static CategoryScanResult evaluate(CategoryScanSnapshot world,
+            CategoryScanDefinition requested, CategoryZoneOptions global,
+            java.util.function.BiConsumer<String, Object> trace) {
         var templates = requested.templates().stream().map(template -> {
             var options = template.optionsEnabled() ? template.categoryOptions() : global;
             if (options == null) return template;
@@ -289,11 +308,16 @@ public final class CategoryScanEngine {
                     options.storagePolicy(template.storagePolicy()), false, template.name(),
                     template.optionsEnabled(), template.categoryOptions(), template.standingPlan());
         }).toList();
-        return evaluateCompiled(world, requested.withTemplates(templates), global);
+        var compiled = requested.withTemplates(templates);
+        trace.accept("FINAL_TEMPLATE", compiled);
+        var result = evaluateCompiled(world, compiled, global, trace);
+        trace.accept("SLICE_RESULTS", result.scan().slices());
+        return result;
     }
 
     private static CategoryScanResult evaluateCompiled(CategoryScanSnapshot world,
-            CategoryScanDefinition scan, CategoryZoneOptions global) {
+            CategoryScanDefinition scan, CategoryZoneOptions global,
+            java.util.function.BiConsumer<String, Object> trace) {
         if (!sameArea(world.area(), scan.area()) || !world.dimension().equals(scan.dimension())) {
             throw new IllegalArgumentException("总选区或游戏维度已改变，请重新扫描");
         }
@@ -365,7 +389,12 @@ public final class CategoryScanEngine {
             if (reason == null) {
                 var checks = planned.get(index).stream().map(value -> byId.get(value.binding().id()))
                         .toList();
-                reason = markerFailure(checks, owners);
+                trace.accept("SLICE_MARKERS", Map.of("slice", index, "groups", checks.stream()
+                        .map(check -> Map.of("templateId", owners.get(check.binding().id()),
+                                "markerArea", check.binding().markerArea(),
+                                "storageArea", check.binding().storageArea(),
+                                "markers", check.markers())).toList()));
+                reason = markerFailure(checks, owners, index, trace);
                 if (reason == null) {
                     // Append only after every group passed. No partial slice survives an error.
                     bindings.addAll(checks.stream().map(CategoryZoneClassifier.Scan::binding).toList());
@@ -381,7 +410,7 @@ public final class CategoryScanEngine {
     }
 
     private static String markerFailure(List<CategoryZoneClassifier.Scan> scans,
-            Map<UUID, UUID> owners) {
+            Map<UUID, UUID> owners, int index, java.util.function.BiConsumer<String, Object> trace) {
         for (var scan : scans) {
             for (var marker : scan.markers()) {
                 if (scans.stream().anyMatch(other ->
@@ -392,6 +421,8 @@ public final class CategoryScanEngine {
             }
         }
         var result = CategoryZoneClassifier.resolvePrepared(scans, RULES, null, false);
+        trace.accept("SLICE_CATEGORIES", Map.of("slice", index, "succeeded", result.succeeded(),
+                "message", result.message(), "categories", result.categories()));
         if (!result.succeeded()) return result.message();
         for (var scan : scans) {
             var target = scan.containers().getFirst();

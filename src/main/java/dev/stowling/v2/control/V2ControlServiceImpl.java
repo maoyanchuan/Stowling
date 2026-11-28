@@ -63,6 +63,26 @@ public final class V2ControlServiceImpl implements V2ControlService {
     private Supplier<dev.stowling.inventory.WarehouseInventory> warehouse;
     private java.util.function.Function<AreaBounds,
             dev.stowling.v2.scan.CategoryScanSnapshot> categoryScanner;
+    private final dev.stowling.v2.scan.CategoryScanDiagnosticLog scanDiagnostics =
+            new dev.stowling.v2.scan.CategoryScanDiagnosticLog();
+    private Map<String, String> scanVersions = Map.of();
+
+    public V2ControlServiceImpl withCategoryScanner(java.util.function.Function<AreaBounds,
+            dev.stowling.v2.scan.CategoryScanSnapshot> scanner, Map<String, String> versions) {
+        withCategoryScanner(scanner);
+        scanVersions = Map.copyOf(versions);
+        return this;
+    }
+
+    @Override
+    public dev.stowling.v2.scan.CategoryScanDiagnosticLog.History categoryScanDiagnostics() {
+        return scanDiagnostics.history();
+    }
+
+    @Override
+    public dev.stowling.v2.scan.CategoryScanDiagnosticLog.Entry categoryScanDiagnostic(UUID id) {
+        return scanDiagnostics.get(id);
+    }
 
     public V2ControlServiceImpl withCategoryScanner(java.util.function.Function<AreaBounds,
             dev.stowling.v2.scan.CategoryScanSnapshot> scanner) {
@@ -74,11 +94,37 @@ public final class V2ControlServiceImpl implements V2ControlService {
     public dev.stowling.v2.scan.CategoryScanResult scanCategoryZone(AreaBounds area,
             dev.stowling.v2.scan.CategoryScanDefinition scan,
             dev.stowling.v2.model.CategoryZoneOptions options) {
-        dev.stowling.v2.scan.CategoryScanDefinition.validateArea(area);
-        if (categoryScanner == null) throw new V2ValidationException("当前未连接游戏扫描服务");
-        var world = categoryScanner.apply(area);
-        return scan == null ? dev.stowling.v2.scan.CategoryScanEngine.preview(world, options)
-                : dev.stowling.v2.scan.CategoryScanEngine.evaluate(world, scan, options);
+        return performCategoryScan(area, scan, options, scan == null ? "PREVIEW" : "CONFIRM");
+    }
+
+    private dev.stowling.v2.scan.CategoryScanResult performCategoryScan(AreaBounds area,
+            dev.stowling.v2.scan.CategoryScanDefinition scan,
+            dev.stowling.v2.model.CategoryZoneOptions options, String operation) {
+        var capture = scanDiagnostics.begin(operation, area, scan, options, scanVersions);
+        dev.stowling.v2.scan.CategoryScanResult result = null;
+        RuntimeException failure = null;
+        try {
+            dev.stowling.v2.scan.CategoryScanDefinition.validateArea(area);
+            if (categoryScanner == null) throw new V2ValidationException("当前未连接游戏扫描服务");
+            var world = categoryScanner.apply(area);
+            capture.observe(world);
+            result = scan == null
+                    ? dev.stowling.v2.scan.CategoryScanEngine.preview(world, options, capture::stage)
+                    : dev.stowling.v2.scan.CategoryScanEngine.evaluate(world, scan, options,
+                            capture::stage);
+            result = new dev.stowling.v2.scan.CategoryScanResult(result.scan(), result.bindings(),
+                    capture.id());
+            return result;
+        } catch (RuntimeException exception) {
+            failure = exception;
+            throw exception;
+        } finally {
+            var summary = capture.finish(result, failure);
+            runs.diagnostics().append(capture.id(), "SCAN", "", "CATEGORY_SCAN", "STATE",
+                    operation, "扫描日志 " + capture.id() + "：" + summary.state()
+                            + "；" + summary.validSlices() + " / " + summary.totalSlices() + " 片有效",
+                    summary.elapsedMillis(), false);
+        }
     }
     private final CategoryRuleRegistry categoryRules =
             CategoryRuleRegistry.standard();
@@ -2017,7 +2063,8 @@ public final class V2ControlServiceImpl implements V2ControlService {
             var priorTemplates = existing != null && existing.scan() != null
                     ? existing.scan().templates() : List.<CategoryBindingDefinition>of();
             var templates = bindings(requestedBindings, priorTemplates, options);
-            var result = scanCategoryZone(overallArea, requestedScan.withTemplates(templates), options);
+            var result = performCategoryScan(overallArea, requestedScan.withTemplates(templates),
+                    options, "SAVE");
             if (result.bindings().isEmpty()) {
                 throw new V2ValidationException("所有片均未通过核对，请校正母版后重新确认");
             }

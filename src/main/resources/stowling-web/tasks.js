@@ -12,6 +12,9 @@
         triggerStatuses: [],
         modules: [],
         runs: [],
+        scans: [],
+        scanSession: "",
+        scanLogRevision: "",
         queue: [],
         runRequestId: 0,
         lastRunResponseId: 0,
@@ -631,8 +634,17 @@
     async function loadRuns() {
         const requestId = ++state.runRequestId;
         try {
-            const response = await Stowling.request("/v1/task-runs");
+            const [runtime, diagnostics] = await Promise.allSettled([
+                Stowling.request("/v1/task-runs"),
+                window.StowlingScanDiagnostics.history()
+            ]);
             if (requestId <= state.lastRunResponseId) return;
+            if (diagnostics.status === "fulfilled") {
+                state.scans = diagnostics.value.scans || [];
+                state.scanSession = diagnostics.value.session;
+            }
+            if (runtime.status === "rejected") throw runtime.reason;
+            const response = runtime.value;
             state.runs = Array.isArray(response?.runs) ? response.runs : [];
             state.queue = Array.isArray(response?.queue)
                 ? response.queue
@@ -850,9 +862,14 @@
      * @returns {void}
      */
     function appendMonitorLogs() {
-        elements.exportLogs.disabled = Monitor.exportRuns(state.runs).length === 0;
+        elements.exportLogs.disabled = Monitor.exportRuns(state.runs).length === 0
+            && state.scans.length === 0;
         const added = taskLogs.ingest(state.runs, state.queue);
-        if (added > 0 || elements.logList.childElementCount === 0) {
+        const scansAdded = taskLogs.ingestScans({session: state.scanSession, scans: state.scans});
+        const revision = `${state.scanSession}:${state.scans.map(scan => scan.id).join(",")}`;
+        const historyChanged = revision !== state.scanLogRevision;
+        state.scanLogRevision = revision;
+        if (added > 0 || scansAdded > 0 || historyChanged || elements.logList.childElementCount === 0) {
             renderMonitorLogs();
         }
     }
@@ -868,7 +885,7 @@
         elements.logCount.textContent = String(entries.length);
         elements.clearLogs.disabled = entries.length === 0;
         if (entries.length === 0) {
-            elements.logList.append(Stowling.emptyState("暂无任务进度"));
+            elements.logList.append(Stowling.emptyState("暂无任务进度或扫描日志"));
         }
         for (const entry of entries) {
             const row = Stowling.element("article", "rail-log-entry");
@@ -880,17 +897,33 @@
             time.textContent = new Date(entry.time).toLocaleTimeString(
                 "zh-CN", { hour12: false }
             );
-            const status = runStateLabel(entry.state);
+            const status = entry.kind === "scan" ? window.StowlingScanDiagnostics.label(entry)
+                : runStateLabel(entry.state);
             const heading = Stowling.element("div", "rail-log-heading");
             heading.append(time, Stowling.element("span", "rail-state", status));
             row.append(heading, Stowling.element("strong", "", entry.taskName));
-            const message = runStateMessage(entry);
+            const message = entry.kind === "scan" ? entry.message : runStateMessage(entry);
             if (message && message !== status) {
                 row.append(Stowling.element("p", "rail-log-message", message));
             }
             if (entry.completedSteps !== undefined) {
                 const progress = `${entry.completedSteps} / ${entry.totalSteps ?? "—"} 步`;
                 row.append(Stowling.element("span", "rail-log-time", progress));
+            }
+            if (entry.kind === "scan") {
+                const button = Stowling.element("button", "ghost rail-scan-export", "导出扫描日志");
+                button.type = "button";
+                button.disabled = !state.scans.some(scan => scan.id === entry.scanId);
+                button.title = button.disabled ? "记录已轮换或游戏已重启，请重新扫描" : "完整 JSON";
+                button.addEventListener("click", async () => {
+                    button.disabled = true;
+                    try { await window.StowlingScanDiagnostics.download(entry.scanId); }
+                    catch (error) { Stowling.handleError(error, "导出扫描日志失败"); }
+                    finally {
+                        button.disabled = !state.scans.some(scan => scan.id === entry.scanId);
+                    }
+                });
+                row.append(button);
             }
             elements.logList.append(row);
         }
@@ -902,6 +935,13 @@
      */
     async function exportMonitorLogs() {
         const [run] = Monitor.exportRuns(state.runs);
+        const [scan] = state.scans || [];
+        if (scan && (!run || (Date.parse(scan.finishedAt) || 0)
+                > (Date.parse(run.updatedAt || run.startedAt) || 0))) {
+            try { await window.StowlingScanDiagnostics.download(scan.id); }
+            catch (error) { Stowling.handleError(error, "导出扫描日志失败"); }
+            return;
+        }
         if (!run) {
             return;
         }

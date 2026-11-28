@@ -19,6 +19,7 @@
     <script src="/move-task-model.js" defer></script>
     <script src="/auto-classify-task-model.js" defer></script>
     <script src="/task-monitor-model.js" defer></script>
+    <script src="/scan-diagnostics.js" defer></script>
     <script src="/task-cleanup-settings.js" defer></script>
     <script src="/empty-box-settings.js" defer></script>
     <script src="/task-autosave.js" defer></script>
@@ -76,7 +77,8 @@
                             <div class="rail-heading-actions">
                                 <span id="task-log-count" class="count-label">0</span>
                                 <button id="export-task-logs" class="ghost rail-log-action"
-                                        type="button" aria-label="导出日志" title="导出日志" disabled>
+                                        type="button" aria-label="导出日志"
+                                        title="导出最近一次任务或扫描日志" disabled>
                                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                          stroke-width="2" stroke-linecap="round"
                                          stroke-linejoin="round" aria-hidden="true">
@@ -95,7 +97,7 @@
                             </div>
                         </div>
                         <div id="task-log-list" class="rail-log-list" role="log"
-                             aria-label="任务进度记录" aria-live="off" tabindex="0"></div>
+                             aria-label="任务进度与扫描记录" aria-live="off" tabindex="0"></div>
                     </section>
                 </aside>
                 <div id="task-selection-area" class="task-workbench"

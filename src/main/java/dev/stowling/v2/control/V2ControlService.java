@@ -15,6 +15,14 @@ import java.util.function.UnaryOperator;
 import java.util.UUID;
 
 public interface V2ControlService {
+    default dev.stowling.v2.scan.CategoryScanDiagnosticLog.History categoryScanDiagnostics() {
+        return new dev.stowling.v2.scan.CategoryScanDiagnosticLog.History("", 3, List.of());
+    }
+
+    default dev.stowling.v2.scan.CategoryScanDiagnosticLog.Entry categoryScanDiagnostic(UUID id) {
+        throw new V2NotFoundException("扫描日志不存在或已轮换");
+    }
+
     default dev.stowling.v2.runtime.TaskDiagnosticLog.Batch taskDiagnostics(long after, int limit) {
         return new dev.stowling.v2.runtime.TaskDiagnosticLog.Batch("", 1, 0, 0, false, List.of());
     }

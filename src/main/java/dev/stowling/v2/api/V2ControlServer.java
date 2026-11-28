@@ -586,6 +586,19 @@ public final class V2ControlServer implements AutoCloseable {
             }
             return;
         }
+        if ("/v1/category-zones/scan-diagnostics".equals(path)) {
+            requireMethod(method, "GET");
+            requireEmpty(body);
+            sendJson(exchange, 200, service.categoryScanDiagnostics());
+            return;
+        }
+        if (path.startsWith("/v1/category-zones/scan-diagnostics/")) {
+            requireMethod(method, "GET");
+            requireEmpty(body);
+            UUID id = pathUuid(path, "/v1/category-zones/scan-diagnostics/");
+            sendJson(exchange, 200, service.categoryScanDiagnostic(id));
+            return;
+        }
         if ("/v1/category-zones/scan".equals(path)) {
             requireMethod(method, "POST");
             JsonObject json = object(body);
@@ -2007,6 +2020,7 @@ public final class V2ControlServer implements AutoCloseable {
                 Map.entry("/coordinates.js", read("stowling-web/coordinates.js", js)),
                 Map.entry("/coordinate-editor.js", read("stowling-web/coordinate-editor.js", js)),
                 Map.entry("/coordinate-scan.js", read("stowling-web/coordinate-scan.js", js)),
+                Map.entry("/scan-diagnostics.js", read("stowling-web/scan-diagnostics.js", js)),
                 Map.entry("/coordinate-scan-canvas.js",
                         read("stowling-web/coordinate-scan-canvas.js", js)),
                 Map.entry("/coordinate-scan-annotations.js",

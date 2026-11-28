@@ -16,6 +16,7 @@
     <script src="/category-standing-ui.js" defer></script>
     <script src="/coordinate-scan-canvas.js" defer></script>
     <script src="/coordinate-scan-annotations.js" defer></script>
+    <script src="/scan-diagnostics.js" defer></script>
     <script src="/coordinate-scan.js" defer></script>
     <script src="/coordinate-editor.js" defer></script>
 </head>
@@ -439,6 +440,26 @@
         <button id="category-scan-discard" type="button">放弃本次修改</button>
     </div>
     <ol id="category-scan-results" aria-label="逐片核对结果"></ol>
+    <section class="scan-log" aria-label="扫描诊断日志">
+        <button id="scan-log-toggle" type="button"
+                class="category-group-trigger category-option-row" aria-expanded="false"
+                aria-controls="scan-log-content">
+            <span class="category-option-label">扫描日志
+                <small>查看真实方块、候选分配和失败原因，导出后可用于定位问题。</small></span>
+            <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="1.8"><path d="m9 6 6 6-6 6"/></svg>
+        </button>
+        <div id="scan-log-content" hidden>
+            <p class="scan-log-meta">保留最近 3 次扫描；页面刷新保留，游戏重启清空。</p>
+            <div class="actions">
+                <button id="scan-log-refresh" type="button">刷新日志</button>
+                <button id="scan-log-export" type="button" disabled>导出所选日志</button>
+            </div>
+            <p id="scan-log-message" role="status" aria-live="polite"></p>
+            <div id="scan-log-history" aria-label="最近扫描记录"></div>
+            <div id="scan-log-detail"></div>
+        </div>
+    </section>
 </section>
 <button id="category-generated-toggle" type="button"
         class="category-group-trigger category-option-row" aria-expanded="false"

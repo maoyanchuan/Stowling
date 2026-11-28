@@ -1,4 +1,71 @@
 /* Canvas and annotations follow the approved offline coordinate template. */
+.scan-log {
+    min-width: 0;
+    border-top: 1px solid var(--line);
+}
+
+#scan-log-content {
+    min-width: 0;
+    padding: 0 12px 12px;
+}
+
+.scan-log-meta {
+    color: var(--muted);
+    font-size: 12px;
+    overflow-wrap: anywhere;
+}
+
+#scan-log-history {
+    display: grid;
+    gap: 6px;
+    margin: 12px 0;
+}
+
+.scan-log-choice {
+    text-align: left;
+    overflow-wrap: anywhere;
+    border: 1px solid var(--line);
+    background: var(--panel-solid);
+    color: var(--text);
+}
+
+.scan-log-choice[aria-pressed="true"] {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+    color: var(--accent-strong);
+}
+
+.scan-log-stage {
+    padding: 10px 0;
+    border-bottom: 1px solid var(--line);
+}
+
+.scan-log-stage summary {
+    cursor: pointer;
+    overflow-wrap: anywhere;
+}
+
+.scan-log pre {
+    max-height: 320px;
+    overflow: auto;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    font-size: 12px;
+    line-height: 1.65;
+    font-variant-numeric: tabular-nums;
+}
+
+.scan-log-world {
+    display: grid;
+    margin-top: 16px;
+    gap: 8px;
+}
+
+.scan-log-world input {
+    width: 100%;
+    min-width: 0;
+}
+
 .classic-slice {
     --glass-edge: #8995a2;
     margin: 0;

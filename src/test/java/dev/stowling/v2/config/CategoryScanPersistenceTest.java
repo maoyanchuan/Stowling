@@ -17,6 +17,31 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class CategoryScanPersistenceTest {
+    @Test
+    void displayContainerRolesAndPhysicalAlternativesSurviveSaveReopenAndRevalidation()
+            throws Exception {
+        for (var world : List.of(CategoryScanEngineTest.displayedChestWorld(),
+                CategoryScanEngineTest.pressurePlateWorld())) {
+            var result = CategoryScanEngine.preview(world, CategoryScanEngineTest.OPTIONS);
+            var zone = new CategoryZoneDefinition(UUID.randomUUID(), "Scanned", result.bindings(),
+                    null, CategoryScanEngineTest.OPTIONS, world.area(), result.scan());
+            var config = new AppConfig(AppConfig.CURRENT_SCHEMA_VERSION, List.of(), List.of(),
+                    List.of(), List.of(zone));
+            var path = directory.resolve(zone.id() + ".json");
+            Files.writeString(path, new Gson().toJson(config));
+            var store = new ConfigStore(path);
+            var first = store.read();
+            store.save(first.revision(), first.config());
+            var restored = new ConfigStore(path).read().config().categoryZones().getFirst();
+            assertEquals(zone, restored);
+            var refreshed = CategoryScanEngine.evaluate(world, restored.scan(),
+                    CategoryScanEngineTest.OPTIONS);
+            assertEquals(restored.scan().markerAnchors(), refreshed.scan().markerAnchors());
+            assertEquals(restored.bindings(), refreshed.bindings());
+            assertEquals(10, refreshed.bindings().size());
+        }
+    }
+
     @TempDir
     Path directory;
 

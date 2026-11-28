@@ -21,6 +21,174 @@ import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 public class CategoryScanEngineTest {
+    public static CategoryScanSnapshot displayedChestWorld() {
+        var blocks = new ArrayList<CategoryScanBlock>();
+        var markers = new ArrayList<CategoryMarker>();
+        for (int z = -20; z < -10; z++) {
+            var stored = new BlockPosition(216, -23, z);
+            var partner = new BlockPosition(217, -23, z);
+            blocks.add(new CategoryScanBlock(stored, "minecraft:chest", "chest", "north",
+                    partner, 0, false));
+            markers.add(new CategoryMarker(stored, "minecraft:chest"));
+            markers.add(new CategoryMarker(partner, "minecraft:chest"));
+            String id = z == -20 ? "minecraft:chest" : z == -19 ? "minecraft:barrel"
+                    : "minecraft:stone";
+            var p = new BlockPosition(216, -24, z);
+            blocks.add(new CategoryScanBlock(p, id, z == -20 ? "single"
+                    : z == -19 ? "barrel" : "quartz", "east", null, 0, false));
+            markers.add(new CategoryMarker(p, id));
+        }
+        return new CategoryScanSnapshot(new AreaBounds(215, -25, -20, 219, -22, -11),
+                "minecraft:overworld", blocks, markers);
+    }
+
+    public static CategoryScanSnapshot pressurePlateWorld() {
+        var blocks = new ArrayList<CategoryScanBlock>();
+        var markers = new ArrayList<CategoryMarker>();
+        var anchors = new java.util.HashMap<BlockPosition, BlockPosition>();
+        for (int z = -74; z < -64; z++) {
+            var stored = new BlockPosition(223, -24, z);
+            blocks.add(new CategoryScanBlock(stored, "minecraft:chest", "chest", "north",
+                    stored.offset(1, 0, 0), 0, false));
+            var base = new BlockPosition(222, -24, z);
+            var position = base;
+            var source = CategoryMarkerSource.PLACED_ITEM;
+            String id = "minecraft:stripped_warped_hyphae";
+            if (z == -74 || z == -72 || z == -71) {
+                blocks.add(new CategoryScanBlock(base, "minecraft:quartz_block", "quartz",
+                        "north", null, 0, false));
+                position = z == -71 ? base.offset(-1, 0, 0) : base.offset(0, 1, 0);
+                id = z == -74 ? "minecraft:oak_pressure_plate" : z == -72
+                        ? "minecraft:fern" : "minecraft:diamond";
+                source = z == -72 ? CategoryMarkerSource.FLOWER_POT : z == -71
+                        ? CategoryMarkerSource.ITEM_FRAME : CategoryMarkerSource.PLACED_ITEM;
+                anchors.put(position, base);
+            }
+            blocks.add(new CategoryScanBlock(position,
+                    source == CategoryMarkerSource.FLOWER_POT ? "minecraft:potted_fern"
+                            : source == CategoryMarkerSource.ITEM_FRAME ? "minecraft:item_frame" : id,
+                    "quartz", "north", null, 0, false));
+            markers.add(new CategoryMarker(position, id, source, -1));
+        }
+        return new CategoryScanSnapshot(new AreaBounds(220, -25, -74, 225, -22, -65),
+                "minecraft:overworld", blocks, markers, anchors);
+    }
+
+    @Test
+    void emptyChestAndBarrelDisplaysAreItemsRatherThanExtraStorageOrInventoryReads() {
+        var world = displayedChestWorld();
+        var result = CategoryScanEngine.preview(world, OPTIONS);
+        assertEquals("Z", result.scan().axis());
+        assertEquals(1, result.scan().templates().size());
+        assertEquals(10, result.bindings().size());
+        assertEquals(1, CategoryScanEngine.storageBlocks(result.scan()).size());
+        var resolved = categories(world, result);
+        assertTrue(resolved.succeeded(), resolved.message());
+        assertEquals(new BlockPosition(216, -23, -20),
+                resolved.categories().get("minecraft:chest").getFirst().position());
+        assertEquals(1, resolved.categories().get("minecraft:chest").size());
+        assertEquals(new BlockPosition(216, -23, -19),
+                resolved.categories().get("minecraft:barrel").getFirst().position());
+        assertEquals(result.bindings(), CategoryScanEngine.savedBindings(result.scan()));
+    }
+
+    @Test
+    void differentDisplayFormsShareOneSlotWithoutCopyingTheMotherItemOrSupport() {
+        var world = pressurePlateWorld();
+        var result = CategoryScanEngine.preview(world, OPTIONS);
+        assertEquals(10, result.bindings().size());
+        var template = result.scan().templates().getFirst();
+        assertEquals(List.of(new BlockPosition(222, -24, -74)),
+                result.scan().markerAnchors().get(template.id()));
+        var resolved = categories(world, result);
+        assertTrue(resolved.succeeded(), resolved.message());
+        assertEquals(new BlockPosition(223, -24, -74),
+                resolved.categories().get("minecraft:oak_pressure_plate").getFirst().position());
+        assertEquals(7, resolved.categories().get("minecraft:stripped_warped_hyphae").size());
+        assertFalse(resolved.categories().containsKey("minecraft:quartz_block"));
+        assertTrue(resolved.categories().containsKey("minecraft:fern"));
+        assertTrue(resolved.categories().containsKey("minecraft:diamond"));
+    }
+
+    @Test
+    void unrelatedExtraContainerAndMissingStorageRemainWholeSliceFailures() {
+        var world = displayedChestWorld();
+        var initial = CategoryScanEngine.preview(world, OPTIONS);
+        var blocks = new ArrayList<>(world.blocks());
+        blocks.add(new CategoryScanBlock(new BlockPosition(219, -22, -18), "minecraft:chest",
+                "single", "east", null, 0, false));
+        blocks.removeIf(block -> block.position().equals(new BlockPosition(216, -23, -17)));
+        var result = CategoryScanEngine.evaluate(new CategoryScanSnapshot(world.area(),
+                world.dimension(), blocks, world.markers()), initial.scan(), OPTIONS);
+        assertEquals(8, result.bindings().size());
+        assertTrue(result.scan().slices().get(2).reason().contains("母版之外"));
+        assertTrue(result.scan().slices().get(3).reason().contains("双箱"));
+        assertEquals(result.bindings(), CategoryScanEngine.savedBindings(result.scan()));
+    }
+
+    @Test
+    void puttingADisplayContainerInTheMotherDoesNotTurnItIntoStorage() {
+        var world = displayedChestWorld();
+        var initial = CategoryScanEngine.preview(world, OPTIONS);
+        var template = initial.scan().templates().getFirst();
+        var display = new CategoryScanBlock(new BlockPosition(216, -24,
+                initial.scan().mother().minZ()), "minecraft:chest", "single", "east", null, 0, false);
+        var blocks = new ArrayList<>(initial.scan().blocks());
+        blocks.removeIf(block -> block.bounds().contains(display.position()));
+        blocks.add(display);
+        var mother = new CategoryScanDefinition(initial.scan().area(), initial.scan().dimension(),
+                initial.scan().axis(), initial.scan().step(), initial.scan().templateIndex(),
+                initial.scan().sliceCount(), List.of(template), blocks, initial.scan().slices(),
+                null, initial.scan().markerAnchors());
+        assertEquals(initial.bindings(), CategoryScanEngine.savedBindings(mother));
+        assertEquals(1, CategoryScanEngine.storageBlocks(mother).size());
+        var contents = new CategoryZoneOptions("single", "container-item", "bulk", "inside-box",
+                "", false, "", 27);
+        assertThrows(IllegalArgumentException.class, () ->
+                CategoryScanEngine.evaluate(world, mother, contents));
+    }
+
+    @Test
+    void realPressurePlateCoordinateExclusionsAndRedrawingStillRecomputeResults() {
+        var world = pressurePlateWorld();
+        var initial = CategoryScanEngine.preview(world, OPTIONS);
+        var options = new CategoryZoneOptions("single", "marker", "bulk", "inside-box", "",
+                false, "", 27, true, List.of(new dev.stowling.v2.model.CategoryPositionDraft(
+                        222, -23, -74)), false, false, List.of());
+        var result = CategoryScanEngine.evaluate(world, initial.scan(), options);
+        assertEquals(9, result.bindings().size());
+        assertFalse(result.scan().slices().getFirst().reason().isEmpty());
+        var prior = initial.scan().templates().getFirst();
+        var edited = initial.scan().withTemplates(List.of(binding(prior,
+                new AreaBounds(220, -24, -74, 220, -23, -74), prior.storageArea())));
+        assertTrue(edited.markerAnchors().isEmpty());
+        assertTrue(CategoryScanEngine.evaluate(world, edited, OPTIONS).bindings().isEmpty());
+    }
+
+    private static dev.stowling.v2.category.CategoryRuleResult categories(CategoryScanSnapshot world,
+            CategoryScanResult result) {
+        var zone = new CategoryZoneDefinition(UUID.randomUUID(), "Scan", result.bindings(),
+                null, OPTIONS, world.area(), result.scan());
+        var scans = new ArrayList<CategoryZoneClassifier.Scan>();
+        for (int i = 0; i < zone.bindings().size(); i++) {
+            var binding = zone.bindings().get(i);
+            var template = CategoryZoneTiler.templateFor(zone, i);
+            int delta = result.scan().axis().equals("X")
+                    ? binding.markerArea().minX() - template.markerArea().minX()
+                    : binding.markerArea().minZ() - template.markerArea().minZ();
+            var physical = world.blocks().stream().filter(CategoryScanBlock::container)
+                    .filter(block -> binding.storageArea().contains(block.bounds()))
+                    .findFirst().orElseThrow();
+            var target = new dev.stowling.automation.ContainerTarget(physical.position(),
+                    physical.blockId(), null, binding.storagePolicy(), physical.partner());
+            scans.add(new CategoryZoneClassifier.Scan(binding, OPTIONS, null,
+                    world.markers().stream().filter(marker -> CategoryScanEngine.matchesMarker(
+                            result.scan(), template, delta, marker, world.anchor(marker))).toList(),
+                    List.of(target)));
+        }
+        return CategoryZoneClassifier.resolve(scans, CategoryRuleRegistry.standard(), null);
+    }
+
     @Test
     void reportedSameHeightMarkerDoesNotRequireAnExtraUpperRow() {
         var area = new AreaBounds(218, -18, -15, 221, -18, -6);
@@ -105,6 +273,7 @@ public class CategoryScanEngineTest {
                 "minecraft:overworld", blocks, markers), OPTIONS);
         assertEquals("Z", result.scan().axis());
         assertEquals(chests.length, result.scan().templates().size());
+        assertEquals(10 * chests.length, result.bindings().size(), result.scan().slices().toString());
         for (var template : result.scan().templates()) {
             assertTrue(result.scan().mother().contains(template.markerArea()));
             for (var block : result.scan().blocks()) {
@@ -112,6 +281,59 @@ public class CategoryScanEngineTest {
                 assertFalse(template.markerArea().contains(block.position()));
                 assertFalse(template.markerArea().contains(block.partner()));
             }
+        }
+    }
+
+    @Test
+    void steppedRingCanUseDifferentPhysicalAlternativesForTheSameGroupAcrossSlices() {
+        int[][] chests = {{5, 9}, {8, 9}, {11, 9}, {14, 9}, {2, 8}, {17, 8},
+                {1, 6}, {18, 6}, {1, 4}, {18, 4}, {3, 2}, {6, 2}, {13, 2}, {16, 2}};
+        int[][] displays = {{4, 9}, {7, 9}, {13, 9}, {16, 9}, {3, 7}, {17, 7},
+                {2, 5}, {18, 5}, {2, 3}, {18, 3}, {5, 2}, {8, 3}, {12, 3}, {15, 2}};
+        var blocks = new ArrayList<CategoryScanBlock>();
+        var markers = new ArrayList<CategoryMarker>();
+        var anchors = new java.util.HashMap<BlockPosition, BlockPosition>();
+        for (int z = 0; z < 10; z++) {
+            var bodies = new java.util.HashSet<BlockPosition>();
+            for (var chest : chests) {
+                var p = new BlockPosition(chest[0], chest[1], z);
+                bodies.add(p);
+                bodies.add(p.offset(1, 0, 0));
+                blocks.add(new CategoryScanBlock(p, "minecraft:chest", "chest", "north",
+                        p.offset(1, 0, 0), 0, false));
+            }
+            for (int group = 0; group < displays.length; group++) {
+                var base = new BlockPosition(displays[group][0], displays[group][1], z);
+                var physical = base;
+                String id = "minecraft:display_" + group;
+                if (z % 3 == 1) {
+                    if (bodies.contains(base.offset(0, 1, 0))) {
+                        base = base.offset(chests[group][0] > 10 ? -1 : 1, 0, 0);
+                    }
+                    physical = base.offset(0, 1, 0);
+                    blocks.add(new CategoryScanBlock(base, "minecraft:quartz_block", "quartz",
+                            "north", null, 0, false));
+                    anchors.put(physical, base);
+                }
+                assertFalse(bodies.contains(physical));
+                blocks.add(new CategoryScanBlock(physical, id, "quartz", "north", null, 0, false));
+                markers.add(new CategoryMarker(physical, id));
+            }
+        }
+        var world = new CategoryScanSnapshot(new AreaBounds(0, 1, 0, 20, 10, 9),
+                "minecraft:overworld", blocks, markers, anchors);
+        var result = CategoryScanEngine.preview(world, OPTIONS);
+        assertEquals(140, result.bindings().size(), result.scan().slices().toString());
+        assertTrue(result.scan().markerAnchors().values().stream()
+                .anyMatch(values -> values.size() > 1));
+        var resolved = categories(world, result);
+        assertTrue(resolved.succeeded(), resolved.message());
+        for (int group = 0; group < chests.length; group++) {
+            var targets = resolved.categories().get("minecraft:display_" + group);
+            assertEquals(10, targets.size());
+            int index = group;
+            assertTrue(targets.stream().allMatch(target -> target.position().x() == chests[index][0]
+                    && target.position().y() == chests[index][1]));
         }
     }
 
@@ -167,6 +389,7 @@ public class CategoryScanEngineTest {
     public static CategoryScanSnapshot world(int missing, int single) {
         var blocks = new ArrayList<CategoryScanBlock>();
         var markers = new ArrayList<CategoryMarker>();
+        var anchors = new java.util.HashMap<BlockPosition, BlockPosition>();
         for (int i = 0; i < 10; i++) {
             if (i != missing) blocks.add(new CategoryScanBlock(new BlockPosition(i, 64, 1),
                     "minecraft:chest", i == single ? "single" : "chest", "east",
@@ -179,12 +402,15 @@ public class CategoryScanEngineTest {
             };
             String id = "minecraft:" + (i % 3 == 0 ? "stone" : i % 3 == 1 ? "dirt" : "fern");
             markers.add(new CategoryMarker(position, id, source, -1));
+            if (source != CategoryMarkerSource.PLACED_ITEM) {
+                anchors.put(position, position.offset(0, -1, 0));
+            }
             blocks.add(new CategoryScanBlock(position,
                     source == CategoryMarkerSource.FLOWER_POT ? "minecraft:potted_fern"
                             : source == CategoryMarkerSource.ITEM_FRAME ? "minecraft:item_frame" : id,
                     "quartz", "north", null, 0, false));
         }
-        return new CategoryScanSnapshot(AREA, "minecraft:overworld", blocks, markers);
+        return new CategoryScanSnapshot(AREA, "minecraft:overworld", blocks, markers, anchors);
     }
 
     @Test
@@ -309,8 +535,10 @@ public class CategoryScanEngineTest {
                 .toList();
         var markers = original.markers().stream().map(marker -> new CategoryMarker(
                 swap(marker.position()), marker.itemId(), marker.source(), -1)).toList();
+        var anchors = new java.util.HashMap<BlockPosition, BlockPosition>();
+        original.markerAnchors().forEach((marker, anchor) -> anchors.put(swap(marker), swap(anchor)));
         var result = CategoryScanEngine.preview(new CategoryScanSnapshot(area, original.dimension(),
-                blocks, markers), OPTIONS);
+                blocks, markers, anchors), OPTIONS);
         assertEquals("Z", result.scan().axis());
         assertEquals(List.of(0, 1, 3, 4, 5, 6, 7, 8, 9), result.bindings().stream()
                 .map(binding -> binding.storageArea().minZ()).toList());

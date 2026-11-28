@@ -15,8 +15,28 @@ public final class CategoryScanJson {
                 "sliceCount", "templates", "blocks", "slices");
         var allowed = new java.util.HashSet<>(keys);
         allowed.add("canvasSize");
+        allowed.add("markerAnchors");
         var scan = CategoryOptionsJson.object(value, allowed);
         for (String key : keys) if (!present(scan.get(key))) fail();
+        if (present(scan.get("markerAnchors"))) {
+            if (!scan.get("markerAnchors").isJsonObject()) fail();
+            var anchors = scan.getAsJsonObject("markerAnchors");
+            if (anchors.size() > 256) fail();
+            for (var entry : anchors.entrySet()) {
+                try {
+                    java.util.UUID.fromString(entry.getKey());
+                } catch (IllegalArgumentException exception) {
+                    throw new V2ValidationException("逻辑展示位组标识无效", exception);
+                }
+                if (!present(entry.getValue()) || !entry.getValue().isJsonArray()) fail();
+                var positions = entry.getValue().getAsJsonArray();
+                if (positions.isEmpty() || positions.size() > 64) fail();
+                for (var position : positions) {
+                    if (!present(position)) fail();
+                    CategoryOptionsJson.position(position, false);
+                }
+            }
+        }
         if (present(scan.get("canvasSize"))) {
             var size = required(scan.get("canvasSize"), Set.of("columns", "rows"));
             number(size, "columns");

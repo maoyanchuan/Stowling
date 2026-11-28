@@ -58,7 +58,7 @@ class V2ControlServerTest {
                     reads.incrementAndGet();
                     var world = observed.get();
                     return new dev.stowling.v2.scan.CategoryScanSnapshot(area, world.dimension(),
-                            world.blocks(), world.markers());
+                            world.blocks(), world.markers(), world.markerAnchors());
                 });
         var gson = new Gson();
         var request = new JsonObject();

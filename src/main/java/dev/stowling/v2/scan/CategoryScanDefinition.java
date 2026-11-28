@@ -6,11 +6,15 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import java.util.Map;
+import java.util.UUID;
+import dev.stowling.domain.BlockPosition;
 
 /** Separate from legacy expansion: templates never occupy slots in the effective binding list. */
 public record CategoryScanDefinition(AreaBounds area, String dimension, String axis, int step,
         int templateIndex, int sliceCount, List<CategoryBindingDefinition> templates,
-        List<CategoryScanBlock> blocks, List<CategoryScanSlice> slices, CanvasSize canvasSize) {
+        List<CategoryScanBlock> blocks, List<CategoryScanSlice> slices, CanvasSize canvasSize,
+        Map<UUID, List<BlockPosition>> markerAnchors) {
     public static final int MAX_VOLUME = 65536;
 
     public record CanvasSize(int columns, int rows) {
@@ -19,6 +23,13 @@ public record CategoryScanDefinition(AreaBounds area, String dimension, String a
                 throw new IllegalArgumentException("画布行列数必须在 1 到 4096 之间");
             }
         }
+    }
+
+    public CategoryScanDefinition(AreaBounds area, String dimension, String axis, int step,
+            int templateIndex, int sliceCount, List<CategoryBindingDefinition> templates,
+            List<CategoryScanBlock> blocks, List<CategoryScanSlice> slices, CanvasSize canvasSize) {
+        this(area, dimension, axis, step, templateIndex, sliceCount, templates, blocks, slices,
+                canvasSize, Map.of());
     }
 
     public CategoryScanDefinition(AreaBounds area, String dimension, String axis, int step,
@@ -42,6 +53,9 @@ public record CategoryScanDefinition(AreaBounds area, String dimension, String a
         templates = List.copyOf(templates);
         blocks = List.copyOf(blocks);
         slices = List.copyOf(slices);
+        markerAnchors = markerAnchors == null ? Map.of() : markerAnchors.entrySet().stream()
+                .collect(java.util.stream.Collectors.toUnmodifiableMap(Map.Entry::getKey,
+                        entry -> List.copyOf(entry.getValue())));
         if (templates.isEmpty() || templates.size() > 256 || blocks.size() > 4096) {
             throw new IllegalArgumentException("扫描母版为空或过大");
         }
@@ -52,6 +66,12 @@ public record CategoryScanDefinition(AreaBounds area, String dimension, String a
                     || !mother.contains(template.storageArea())) {
                 throw new IllegalArgumentException("母版组标识重复或区域越出母版片");
             }
+        }
+        if (!ids.containsAll(markerAnchors.keySet())
+                || markerAnchors.values().stream().anyMatch(List::isEmpty)
+                || markerAnchors.values().stream().flatMap(List::stream)
+                        .anyMatch(anchor -> !mother.contains(anchor))) {
+            throw new IllegalArgumentException("逻辑展示位必须关联有效母版组并位于单片内");
         }
         var occupied = new HashSet<>();
         for (var block : blocks) {
@@ -106,7 +126,16 @@ public record CategoryScanDefinition(AreaBounds area, String dimension, String a
     }
 
     public CategoryScanDefinition withTemplates(List<CategoryBindingDefinition> values) {
+        Map<UUID, List<BlockPosition>> anchors = new java.util.LinkedHashMap<>();
+        for (int i = 0; i < Math.min(values.size(), templates.size()); i++) {
+            var prior = templates.get(i);
+            var value = values.get(i);
+            if (prior.markerArea().equals(value.markerArea())
+                    && markerAnchors.containsKey(prior.id())) {
+                anchors.put(value.id(), markerAnchors.get(prior.id()));
+            }
+        }
         return new CategoryScanDefinition(area, dimension, axis, step, templateIndex, sliceCount,
-                values, blocks, List.of(), canvasSize);
+                values, blocks, List.of(), canvasSize, anchors);
     }
 }

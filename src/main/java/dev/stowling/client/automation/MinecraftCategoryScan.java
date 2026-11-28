@@ -110,7 +110,8 @@ public final class MinecraftCategoryScan {
         blocks.sort(Comparator.comparingInt((CategoryScanBlock block) -> block.position().x())
                 .thenComparingInt(block -> block.position().y())
                 .thenComparingInt(block -> block.position().z()));
-        var markers = MinecraftCategoryZoneResolver.scanMarkers(level, area);
+        var displays = MinecraftCategoryZoneResolver.scanDisplays(level, area);
+        var markers = displays.markers();
         for (var marker : markers) {
             if (marker.source() == dev.stowling.v2.category.CategoryMarkerSource.ITEM_FRAME
                     && blocks.stream().noneMatch(block -> block.bounds().contains(marker.position()))) {
@@ -119,7 +120,7 @@ public final class MinecraftCategoryScan {
             }
         }
         return new CategoryScanSnapshot(area, level.dimension().identifier().toString(), blocks,
-                markers);
+                markers, displays.anchors());
     }
 
     private static BlockPosition position(BlockPos p) {

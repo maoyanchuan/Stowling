@@ -178,7 +178,7 @@ class CategoryZoneTilerTest {
     void expansionIdsRemainStableAcrossRepeatedCalculation() {
         CategoryZoneExpansionDefinition expansion =
                 new CategoryZoneExpansionDefinition(
-                        new AreaBounds(-20, 63, 17, 0, 65, 21),
+                        new AreaBounds(-20, 63, 17, 4, 65, 21),
                         CategoryZoneExpansionAxis.X_NEGATIVE,
                         10,
                         1

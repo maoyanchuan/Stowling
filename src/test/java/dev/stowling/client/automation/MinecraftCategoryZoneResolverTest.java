@@ -24,6 +24,34 @@ import org.junit.jupiter.api.Test;
 
 class MinecraftCategoryZoneResolverTest {
     @Test
+    void pressurePlateUsesItsPhysicalCoordinateAndOnlyItsOwnQuartzSupportIsRemoved() {
+        var support = new BlockPosition(222, -24, -74);
+        var plate = support.offset(0, 1, 0);
+        var separate = support.offset(0, 0, 1);
+        LevelReader level = (LevelReader) Proxy.newProxyInstance(LevelReader.class.getClassLoader(),
+                new Class<?>[]{LevelReader.class}, (proxy, method, args) -> {
+                    if (method.getName().equals("getBlockState")) {
+                        return ((BlockPos) args[0]).equals(new BlockPos(plate.x(), plate.y(), plate.z()))
+                                ? Blocks.OAK_PRESSURE_PLATE.defaultBlockState()
+                                : Blocks.QUARTZ_BLOCK.defaultBlockState();
+                    }
+                    if (method.getName().equals("getBlockEntity")) return null;
+                    throw new UnsupportedOperationException(method.getName());
+                });
+        var markers = new ArrayList<>(List.of(new CategoryMarker(plate, "minecraft:oak_pressure_plate"),
+                new CategoryMarker(support, "minecraft:quartz_block"),
+                new CategoryMarker(separate, "minecraft:quartz_block")));
+        var anchors = new java.util.HashMap<BlockPosition, BlockPosition>();
+        MinecraftCategoryZoneResolver.removeDisplaySupports(level, markers, anchors);
+        assertEquals(List.of(new CategoryMarker(plate, "minecraft:oak_pressure_plate"),
+                new CategoryMarker(separate, "minecraft:quartz_block")), markers);
+        assertEquals(Map.of(plate, support), anchors);
+        assertEquals(List.of(new CategoryMarker(support, "minecraft:quartz_block")),
+                readBlock(Blocks.QUARTZ_BLOCK, support, Set.of(), Map.of(),
+                        Set.copyOf(CategoryMarkerSource.SMART_SOURCES)));
+    }
+
+    @Test
     void frameSupportFollowsTheAttachmentDirectionRatherThanAlwaysRemovingTheLowerCell() {
         var upper = new BlockPos(2, 65, 3);
         assertEquals(upper.below(), MinecraftCategoryZoneResolver.itemFrameSupport(

@@ -175,8 +175,9 @@ public final class MinecraftCategoryZoneResolver
             boolean classificationTask
     ) {
         List<CategoryZoneClassifier.Scan> scans = new ArrayList<>();
-        List<CategoryMarker> scannedMarkers = zone.scan() == null ? null
-                : scanMarkers(level, zone.scan().area());
+        var scannedDisplays = zone.scan() == null ? null : scanDisplays(level, zone.scan().area());
+        List<CategoryMarker> scannedMarkers = scannedDisplays == null ? null
+                : scannedDisplays.markers();
         Map<BlockPosition, AreaBounds> assignedStances = new java.util.LinkedHashMap<>();
         for (var segment : dev.stowling.v2.model.CategoryStandingSubregions.segments(
                 zone, classificationTask)) {
@@ -204,8 +205,24 @@ public final class MinecraftCategoryZoneResolver
                         sameMarkerAndStorageArea(binding), excluded);
             } else if (scannedMarkers != null && DirectBlockIdCategoryRule.ID.equals(binding.ruleId())) {
                 var sources = markerSourcesFor(binding.ruleId(), markerSources);
+                int ownerIndex = 0;
+                for (int i = 0; i < zone.bindings().size(); i++) {
+                    if (zone.bindings().get(i).storageArea().contains(binding.storageArea())) {
+                        ownerIndex = i;
+                        break;
+                    }
+                }
+                var template = dev.stowling.v2.model.CategoryZoneTiler.templateFor(zone, ownerIndex);
+                var owner = zone.bindings().get(ownerIndex);
+                int delta = zone.scan().axis().equals("X")
+                        ? owner.markerArea().minX() - template.markerArea().minX()
+                        : owner.markerArea().minZ() - template.markerArea().minZ();
                 markers = scannedMarkers.stream()
                         .filter(marker -> binding.markerArea().contains(marker.position()))
+                        .filter(marker -> dev.stowling.v2.scan.CategoryScanEngine.matchesMarker(
+                                zone.scan(), template, delta, marker, scannedDisplays.anchor(marker)))
+                        .filter(marker -> zone.bindings().stream().noneMatch(stored ->
+                                stored.storageArea().contains(marker.position())))
                         .filter(marker -> sources.contains(marker.source()))
                         .filter(marker -> !excluded.contains(marker.position())).toList();
             } else {
@@ -296,6 +313,14 @@ public final class MinecraftCategoryZoneResolver
             Set<CategoryMarkerSource> markerSources,
             Set<BlockPosition> excluded
     ) {
+        return markers(level, area, ignoredBlockIds, markerContainerContents, markerSources,
+                excluded, null);
+    }
+
+    private static List<CategoryMarker> markers(ClientLevel level, AreaBounds area,
+            Set<String> ignoredBlockIds, Map<BlockPosition, Set<String>> markerContainerContents,
+            Set<CategoryMarkerSource> markerSources, Set<BlockPosition> excluded,
+            Map<BlockPosition, BlockPosition> anchors) {
         List<CategoryMarker> result = new ArrayList<>();
         for (long x = area.minX(); x <= area.maxX(); x++) {
             for (long y = area.minY(); y <= area.maxY(); y++) {
@@ -320,7 +345,7 @@ public final class MinecraftCategoryZoneResolver
             }
         }
         if (markerSources.contains(CategoryMarkerSource.ITEM_FRAME)) {
-            appendItemFrameMarkers(level, area, result, false, excluded);
+            appendItemFrameMarkers(level, area, result, false, excluded, anchors);
         }
         result.sort(Comparator.<CategoryMarker>comparingLong(marker ->
                         Math.abs((long) marker.position().x() - area.firstX()))
@@ -334,21 +359,38 @@ public final class MinecraftCategoryZoneResolver
 
     /** Only scanned configurations opt into relationship-based pot support filtering. */
     static List<CategoryMarker> scanMarkers(ClientLevel level, AreaBounds area) {
+        return scanDisplays(level, area).markers();
+    }
+
+    static dev.stowling.v2.scan.CategoryScanMarkers scanDisplays(ClientLevel level, AreaBounds area) {
+        Map<BlockPosition, BlockPosition> anchors = new java.util.LinkedHashMap<>();
         List<CategoryMarker> result = new ArrayList<>(markers(level, area, Set.of(), Map.of(),
-                SMART_MARKER_SOURCES, Set.of()));
-        removePottedSupports(level, result);
-        return List.copyOf(result);
+                SMART_MARKER_SOURCES, Set.of(), anchors));
+        removeDisplaySupports(level, result, anchors);
+        return new dev.stowling.v2.scan.CategoryScanMarkers(result, anchors);
     }
 
     static void removePottedSupports(LevelReader level, List<CategoryMarker> markers) {
+        removeDisplaySupports(level, markers, new java.util.HashMap<>());
+    }
+
+    static void removeDisplaySupports(LevelReader level, List<CategoryMarker> markers,
+            Map<BlockPosition, BlockPosition> anchors) {
         var supports = new java.util.HashSet<BlockPosition>();
         for (var marker : markers) {
-            if (marker.source() != CategoryMarkerSource.FLOWER_POT) continue;
             var p = marker.position();
             var pot = new BlockPos(p.x(), p.y(), p.z());
+            var state = level.getBlockState(pot);
+            if (marker.source() != CategoryMarkerSource.FLOWER_POT
+                    && !(marker.source() == CategoryMarkerSource.PLACED_ITEM
+                            && state.getBlock()
+                                    instanceof net.minecraft.world.level.block.BasePressurePlateBlock)) {
+                continue;
+            }
             var support = pot.below();
-            if (level.getBlockState(pot).canSurvive(level, pot)) {
+            if (state.canSurvive(level, pot)) {
                 supports.add(blockPosition(support));
+                anchors.put(p, blockPosition(support));
             }
         }
         // markers() returns an immutable list; callers that need this filtering use a mutable copy.
@@ -474,6 +516,12 @@ public final class MinecraftCategoryZoneResolver
             boolean attachedOnly,
             Set<BlockPosition> excluded
     ) {
+        appendItemFrameMarkers(level, area, result, attachedOnly, excluded, null);
+    }
+
+    private static void appendItemFrameMarkers(ClientLevel level, AreaBounds area,
+            List<CategoryMarker> result, boolean attachedOnly, Set<BlockPosition> excluded,
+            Map<BlockPosition, BlockPosition> anchors) {
         AABB searchArea = new AABB(
                 area.minX(),
                 area.minY(),
@@ -499,6 +547,7 @@ public final class MinecraftCategoryZoneResolver
             if (!attachedOnly) {
                 result.removeIf(marker -> marker.source() == CategoryMarkerSource.PLACED_ITEM
                         && marker.position().equals(blockPosition(support)));
+                if (anchors != null) anchors.put(blockPosition(position), blockPosition(support));
             }
             appendItemMarker(
                     result,

@@ -22,10 +22,8 @@ import java.util.UUID;
 public final class CategoryScanEngine {
     private static final CategoryRuleRegistry RULES = CategoryRuleRegistry.standard();
 
-    private record Candidate(String axis, int step, int count, int mother, int hits, int score) {
-    }
-
-    private record MarkerCandidate(AreaBounds area, int coverage, long samples, long distance) {
+    private record Candidate(String axis, int step, int count, int mother, int hits, int score,
+            List<CategoryScanBlock> layout) {
     }
 
     private CategoryScanEngine() {
@@ -68,13 +66,41 @@ public final class CategoryScanEngine {
                 var ranked = layouts.entrySet().stream()
                         .sorted(Comparator.<Map.Entry<List<String>, List<Integer>>>comparingInt(
                                 entry -> entry.getValue().size()).reversed()).toList();
-                if (ranked.isEmpty() || ranked.getFirst().getValue().size() < 2) continue;
-                int hits = ranked.getFirst().getValue().size();
-                if (ranked.size() > 1 && ranked.get(1).getValue().size() == hits) continue;
-                candidates.add(new Candidate(axis, step, count,
-                        ranked.getFirst().getValue().getFirst(), hits,
-                        hits * ranked.getFirst().getKey().size()));
-                if (hits == count && hits * ranked.getFirst().getKey().size() == containers.size()) {
+                if (ranked.isEmpty()) continue;
+                Map<String, Integer> occurrences = new HashMap<>();
+                for (var entry : ranked) {
+                    for (String key : entry.getKey()) {
+                        occurrences.merge(key, entry.getValue().size(), Integer::sum);
+                    }
+                }
+                var core = occurrences.entrySet().stream()
+                        .filter(entry -> entry.getValue() > count / 2)
+                        .map(Map.Entry::getKey).sorted().toList();
+                int hits;
+                int mother;
+                if (!core.isEmpty()) {
+                    var stableKeys = core;
+                    var matching = ranked.stream()
+                            .filter(entry -> entry.getKey().containsAll(stableKeys))
+                            .toList();
+                    hits = matching.stream().mapToInt(entry -> entry.getValue().size()).sum();
+                    if (hits < 2) continue;
+                    mother = matching.stream().min(Comparator.comparingInt(entry ->
+                            entry.getKey().size())).orElseThrow().getValue().getFirst();
+                } else {
+                    hits = ranked.getFirst().getValue().size();
+                    if (hits < 2) continue;
+                    if (ranked.size() > 1 && ranked.get(1).getValue().size() == hits) continue;
+                    core = ranked.getFirst().getKey();
+                    mother = ranked.getFirst().getValue().getFirst();
+                }
+                var keys = Set.copyOf(core);
+                int displacement = -mother * step;
+                var layout = partitions.get(mother).stream().filter(block ->
+                        keys.contains(shapeKey(block.shift(axis, displacement)))).toList();
+                candidates.add(new Candidate(axis, step, count, mother, hits,
+                        hits * layout.size(), layout));
+                if (hits == count && hits * layout.size() == containers.size()) {
                     break;
                 }
             }
@@ -97,18 +123,35 @@ public final class CategoryScanEngine {
                 best.mother());
         List<CategoryScanBlock> blocks = world.blocks().stream()
                 .filter(block -> mother.contains(block.bounds())).toList();
-        var storage = blocks.stream().filter(CategoryScanBlock::container)
+        var storage = best.layout().stream()
                 .map(CategoryScanBlock::bounds).toList();
         var evidence = candidateEvidence(world.markers(), options);
+        var choices = best.layout().stream().map(container ->
+                candidateChoices(world, evidence, container, best, mother, storage)).toList();
+        var assignment = CategoryScanAssignment.assign(choices);
+        var alternatives = alternatives(choices, assignment);
+        Map<UUID, List<BlockPosition>> anchors = new LinkedHashMap<>();
         List<CategoryBindingDefinition> templates = new ArrayList<>();
-        for (var container : blocks.stream().filter(CategoryScanBlock::container).toList()) {
-            AreaBounds markers = candidateMarkers(evidence, container, best, mother, storage);
-            templates.add(new CategoryBindingDefinition(UUID.randomUUID(), markers,
+        for (int index = 0; index < best.layout().size(); index++) {
+            var container = best.layout().get(index);
+            var choice = assignment.choices().get(index);
+            UUID id = UUID.randomUUID();
+            var markers = choice.area();
+            if (assignment.ambiguous().contains(index)) {
+                for (var alternative : choices.get(index)) {
+                    if (alternative.score() > 0) markers = enclosing(markers, alternative.area());
+                }
+            } else {
+                var selected = alternatives.get(index);
+                anchors.put(id, selected.stream().map(CategoryScanAssignment.Choice::anchor).toList());
+                for (var alternative : selected) markers = enclosing(markers, alternative.area());
+            }
+            templates.add(new CategoryBindingDefinition(id, markers,
                     container.bounds(), "DIRECT_BLOCK_ID", List.of(), List.of(), null, null,
                     false, "扫描组 " + (templates.size() + 1), false, null));
         }
         var scan = new CategoryScanDefinition(world.area(), world.dimension(), best.axis(),
-                best.step(), best.mother(), best.count(), templates, blocks, List.of());
+                best.step(), best.mother(), best.count(), templates, blocks, List.of(), null, anchors);
         return evaluate(world, scan, options);
     }
 
@@ -123,7 +166,8 @@ public final class CategoryScanEngine {
                         || !ignored.contains(marker.itemId())).toList();
     }
 
-    private static AreaBounds candidateMarkers(List<CategoryMarker> evidence,
+    private static List<CategoryScanAssignment.Choice> candidateChoices(CategoryScanSnapshot world,
+            List<CategoryMarker> evidence,
             CategoryScanBlock container, Candidate candidate, AreaBounds mother,
             List<AreaBounds> storage) {
         var box = container.bounds();
@@ -132,61 +176,99 @@ public final class CategoryScanEngine {
         long maximumDepth = repeatedX ? box.maxX() : box.maxZ();
         long minimumHorizontal = repeatedX ? box.minZ() : box.minX();
         long maximumHorizontal = repeatedX ? box.maxZ() : box.maxX();
-        var positions = new java.util.LinkedHashSet<AreaBounds>();
+        var positions = new java.util.LinkedHashSet<BlockPosition>();
         long y = box.minY();
         for (long depth = minimumDepth; depth <= maximumDepth; depth++) {
             for (long horizontal = minimumHorizontal - 1;
                     horizontal <= maximumHorizontal + 1; horizontal++) {
-                addCandidate(positions, mother, storage, repeatedX, depth, horizontal, y, y + 1);
-                addCandidate(positions, mother, storage, repeatedX, depth, horizontal, y - 1, y);
-                addCandidate(positions, mother, storage, repeatedX, depth, horizontal,
-                        y - 1, y - 1);
-                addCandidate(positions, mother, storage, repeatedX, depth, horizontal,
-                        y + 1, y + 1);
-                addCandidate(positions, mother, storage, repeatedX, depth, horizontal, y, y);
+                for (long height = y - 1; height <= y + 1; height++) {
+                    long x = repeatedX ? depth : horizontal;
+                    long z = repeatedX ? horizontal : depth;
+                    if (x < mother.minX() || x > mother.maxX() || z < mother.minZ()
+                            || z > mother.maxZ() || height < mother.minY()
+                            || height > mother.maxY()) continue;
+                    var p = new BlockPosition((int) x, (int) height, (int) z);
+                    if (storage.stream().noneMatch(bounds -> bounds.contains(p))) positions.add(p);
+                }
             }
         }
         if (positions.isEmpty()) throw new IllegalArgumentException(
                 "储存容器 " + container.position() + " 的相邻候选位置均越出当前单片或被储存箱体占用，"
                         + "请核对总选区与分片布局");
-        return positions.stream().map(area -> scoreCandidate(area, evidence, box, candidate))
-                .max(Comparator.comparingInt(MarkerCandidate::coverage)
-                        .thenComparingLong(MarkerCandidate::samples)
-                        .thenComparing(Comparator.comparingLong(MarkerCandidate::distance)
-                                .reversed()))
-                .orElseThrow().area();
-    }
-
-    private static void addCandidate(Set<AreaBounds> positions, AreaBounds mother,
-            List<AreaBounds> storage, boolean repeatedX, long depth, long horizontal,
-            long minimumY, long maximumY) {
-        long x = repeatedX ? depth : horizontal;
-        long z = repeatedX ? horizontal : depth;
-        long lower = Math.max(minimumY, mother.minY());
-        long upper = Math.min(maximumY, mother.maxY());
-        if (x < mother.minX() || x > mother.maxX() || z < mother.minZ() || z > mother.maxZ()
-                || lower > upper) return;
-        var area = new AreaBounds((int) x, (int) lower, (int) z, (int) x, (int) upper, (int) z);
-        if (storage.stream().noneMatch(container -> overlaps(container, area))) positions.add(area);
-    }
-
-    private static MarkerCandidate scoreCandidate(AreaBounds area, List<CategoryMarker> evidence,
-            AreaBounds storage, Candidate candidate) {
-        int coverage = 0;
-        long samples = 0;
-        long distance = 0;
-        for (int i = 0; i < candidate.count(); i++) {
-            int delta = (i - candidate.mother()) * candidate.step();
-            var shifted = shift(area, candidate.axis(), delta);
-            var targets = evidence.stream().filter(marker -> shifted.contains(marker.position()))
-                    .map(CategoryMarker::position).distinct().toList();
-            if (targets.isEmpty()) continue;
-            coverage++;
-            samples += targets.size();
-            var box = shift(storage, candidate.axis(), delta);
-            distance += targets.stream().mapToLong(p -> distance(p, box)).min().orElseThrow();
+        List<CategoryScanAssignment.Choice> result = new ArrayList<>();
+        for (var anchor : positions) {
+            Set<Integer> covered = new java.util.HashSet<>();
+            Set<BlockPosition> physical = new java.util.LinkedHashSet<>();
+            for (var marker : evidence) {
+                var observed = world.anchor(marker);
+                if (!world.area().contains(observed)) continue;
+                int axisValue = repeatedX ? observed.x() : observed.z();
+                int minimum = repeatedX ? world.area().minX() : world.area().minZ();
+                int index = (axisValue - minimum) / candidate.step();
+                int delta = (candidate.mother() - index) * candidate.step();
+                if (!shift(observed, candidate.axis(), delta).equals(anchor)) continue;
+                var actual = shift(marker.position(), candidate.axis(), delta);
+                if (!mother.contains(actual)
+                        || storage.stream().anyMatch(bounds -> bounds.contains(actual))) continue;
+                covered.add(index);
+                physical.add(actual);
+            }
+            AreaBounds area = point(anchor);
+            if ((long) anchor.y() + 1 <= mother.maxY()) {
+                var above = point(anchor.offset(0, 1, 0));
+                if (storage.stream().noneMatch(bounds -> overlaps(bounds, above))) {
+                    area = enclosing(area, above);
+                }
+            }
+            for (var actual : physical) area = enclosing(area, point(actual));
+            long score = covered.size() * 1000000L - distance(anchor, box);
+            result.add(new CategoryScanAssignment.Choice(anchor, area, score, Set.copyOf(covered)));
         }
-        return new MarkerCandidate(area, coverage, samples, distance);
+        return result.stream().sorted(Comparator.comparingLong(
+                CategoryScanAssignment.Choice::score).reversed()).toList();
+    }
+
+    private static List<List<CategoryScanAssignment.Choice>> alternatives(
+            List<List<CategoryScanAssignment.Choice>> options, CategoryScanAssignment.Result initial) {
+        var selected = new ArrayList<List<CategoryScanAssignment.Choice>>();
+        var covered = new ArrayList<Set<Integer>>();
+        var used = new java.util.HashSet<BlockPosition>();
+        for (var choice : initial.choices()) {
+            selected.add(new ArrayList<>(List.of(choice)));
+            covered.add(new java.util.HashSet<>(choice.slices()));
+            used.add(choice.anchor());
+        }
+        while (true) {
+            var remaining = new ArrayList<List<CategoryScanAssignment.Choice>>();
+            var owners = new ArrayList<Integer>();
+            for (int i = 0; i < options.size(); i++) {
+                if (initial.ambiguous().contains(i)) continue;
+                var known = covered.get(i);
+                var choices = options.get(i).stream().filter(choice -> !used.contains(choice.anchor()))
+                        .filter(choice -> choice.slices().stream()
+                                .anyMatch(slice -> !known.contains(slice)))
+                        .map(choice -> new CategoryScanAssignment.Choice(choice.anchor(), choice.area(),
+                                choice.score() - choice.slices().size() * 1000000L
+                                        + choice.slices().stream()
+                                        .filter(slice -> !known.contains(slice)).count() * 1000000L,
+                                choice.slices())).toList();
+                if (!choices.isEmpty()) { owners.add(i); remaining.add(choices); }
+            }
+            if (remaining.isEmpty()) break;
+            var next = CategoryScanAssignment.assign(remaining);
+            boolean changed = false;
+            for (int i = 0; i < next.choices().size(); i++) {
+                if (next.ambiguous().contains(i)) continue;
+                var choice = next.choices().get(i);
+                int owner = owners.get(i);
+                selected.get(owner).add(choice);
+                covered.get(owner).addAll(choice.slices());
+                used.add(choice.anchor());
+                changed = true;
+            }
+            if (!changed) break;
+        }
+        return selected;
     }
 
     private static long distance(BlockPosition p, AreaBounds area) {
@@ -215,7 +297,7 @@ public final class CategoryScanEngine {
         if (!sameArea(world.area(), scan.area()) || !world.dimension().equals(scan.dimension())) {
             throw new IllegalArgumentException("总选区或游戏维度已改变，请重新扫描");
         }
-        var expected = scan.blocks().stream().filter(CategoryScanBlock::container).toList();
+        var expected = storageBlocks(scan);
         if (expected.isEmpty()) throw new IllegalArgumentException("母版中必须保留储存容器");
         for (var template : scan.templates()) {
             var effective = template.optionsEnabled() ? template.categoryOptions() : global;
@@ -239,14 +321,16 @@ public final class CategoryScanEngine {
             var slab = CategoryScanDefinition.slab(scan.area(), scan.axis(), scan.step(), index);
             var actual = world.blocks().stream().filter(CategoryScanBlock::container)
                     .filter(block -> slab.contains(block.position())
-                            || block.partner() != null && slab.contains(block.partner())).toList();
+                            || block.partner() != null && slab.contains(block.partner()))
+                    .filter(block -> expected.stream().anyMatch(template -> shapeKey(
+                            template.shift(scan.axis(), delta)).equals(shapeKey(block)))
+                            || !displayContainer(scan, block, delta)).toList();
             var shifted = expected.stream().map(block -> block.shift(scan.axis(), delta))
                     .toList();
             String difference = difference(shifted, actual);
             if (difference != null) { failures.put(index, difference); continue; }
             List<CategoryZoneClassifier.Scan> groupScans = new ArrayList<>();
             for (var template : scan.templates()) {
-                var markers = shift(template.markerArea(), scan.axis(), scan.delta(index));
                 var storage = shift(template.storageArea(), scan.axis(), scan.delta(index));
                 var targets = shifted.stream().filter(block -> storage.contains(block.bounds())).toList();
                 if (targets.isEmpty()) {
@@ -255,7 +339,10 @@ public final class CategoryScanEngine {
                 }
                 var options = template.optionsEnabled() ? template.categoryOptions() : global;
                 var effectiveMarkers = world.markers().stream()
-                        .filter(marker -> markers.contains(marker.position())).toList();
+                        .filter(marker -> matchesMarker(scan, template, delta, marker,
+                                world.anchor(marker)))
+                        .filter(marker -> shifted.stream().noneMatch(block ->
+                                block.bounds().contains(marker.position()))).toList();
                 for (var target : targets) {
                     var binding = runtimeBinding(template, target, scan, index);
                     owners.put(binding.id(), template.id());
@@ -290,7 +377,7 @@ public final class CategoryScanEngine {
         }
         return new CategoryScanResult(new CategoryScanDefinition(scan.area(), scan.dimension(),
                 scan.axis(), scan.step(), scan.templateIndex(), scan.sliceCount(), scan.templates(),
-                scan.blocks(), slices, scan.canvasSize()), bindings);
+                scan.blocks(), slices, scan.canvasSize(), scan.markerAnchors()), bindings);
     }
 
     private static String markerFailure(List<CategoryZoneClassifier.Scan> scans,
@@ -338,11 +425,12 @@ public final class CategoryScanEngine {
             throw new IllegalArgumentException("扫描结果尚未核对");
         }
         List<CategoryBindingDefinition> result = new ArrayList<>();
-        var containers = scan.blocks().stream().filter(CategoryScanBlock::container).toList();
+        var containers = storageBlocks(scan);
         if (containers.isEmpty()) throw new IllegalArgumentException("扫描母版没有储存容器");
-        for (var block : containers) {
-            if (scan.templates().stream().filter(template ->
-                    template.storageArea().contains(block.bounds())).count() != 1) {
+        for (var block : scan.blocks().stream().filter(CategoryScanBlock::container).toList()) {
+            long owners = scan.templates().stream().filter(template ->
+                    template.storageArea().contains(block.bounds())).count();
+            if (owners > 1 || owners == 0 && !displayContainer(scan, block, 0)) {
                 throw new IllegalArgumentException("扫描母版的容器归属不完整或重叠");
             }
         }
@@ -366,7 +454,7 @@ public final class CategoryScanEngine {
     }
 
     public static CategoryBindingDefinition templateFor(CategoryScanDefinition scan, int index) {
-        int count = (int) scan.blocks().stream().filter(CategoryScanBlock::container).count();
+        int count = storageBlocks(scan).size();
         int slot = index % count;
         for (var template : scan.templates()) {
             int size = (int) scan.blocks().stream().filter(CategoryScanBlock::container)
@@ -443,6 +531,49 @@ public final class CategoryScanEngine {
 
     private static AreaBounds shift(AreaBounds bounds, String axis, int delta) {
         return bounds.shift(axis.equals("X") ? delta : 0, 0, axis.equals("Z") ? delta : 0);
+    }
+
+    private static BlockPosition shift(BlockPosition p, String axis, int delta) {
+        return new BlockPosition(Math.addExact(p.x(), axis.equals("X") ? delta : 0), p.y(),
+                Math.addExact(p.z(), axis.equals("Z") ? delta : 0));
+    }
+
+    private static AreaBounds point(BlockPosition p) {
+        return new AreaBounds(p.x(), p.y(), p.z(), p.x(), p.y(), p.z());
+    }
+
+    private static AreaBounds enclosing(AreaBounds a, AreaBounds b) {
+        return new AreaBounds(Math.min(a.minX(), b.minX()), Math.min(a.minY(), b.minY()),
+                Math.min(a.minZ(), b.minZ()), Math.max(a.maxX(), b.maxX()),
+                Math.max(a.maxY(), b.maxY()), Math.max(a.maxZ(), b.maxZ()));
+    }
+
+    public static List<CategoryScanBlock> storageBlocks(CategoryScanDefinition scan) {
+        return scan.blocks().stream().filter(CategoryScanBlock::container).filter(block ->
+                scan.templates().stream().anyMatch(template ->
+                        template.storageArea().contains(block.bounds()))).toList();
+    }
+
+    private static boolean displayContainer(CategoryScanDefinition scan, CategoryScanBlock block,
+            int delta) {
+        if (scan.templates().stream().anyMatch(template -> overlaps(
+                shift(template.storageArea(), scan.axis(), delta), block.bounds()))) return false;
+        return scan.templates().stream().anyMatch(template ->
+                shift(template.markerArea(), scan.axis(), delta).contains(block.bounds()));
+    }
+
+    public static boolean matchesMarker(CategoryScanDefinition scan,
+            CategoryBindingDefinition template,
+            int delta, CategoryMarker marker, BlockPosition anchor) {
+        if (!shift(template.markerArea(), scan.axis(), delta).contains(marker.position())) return false;
+        var selected = scan.markerAnchors().get(template.id());
+        if (selected == null) return true;
+        if (selected.stream().anyMatch(p -> shift(p, scan.axis(), delta).equals(anchor))) return true;
+        if (!marker.position().equals(anchor)) return false;
+        // Preserve conflicts between two independent blocks in one declared region, while keeping
+        // markers assigned to an adjacent group's logical slot out of this group's alternatives.
+        return scan.markerAnchors().values().stream().flatMap(List::stream)
+                .noneMatch(other -> shift(other, scan.axis(), delta).equals(anchor));
     }
 
     private static boolean overlaps(AreaBounds a, AreaBounds b) {

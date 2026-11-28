@@ -108,8 +108,7 @@ public final class CategoryZoneTiler {
     public static CategoryBindingDefinition templateFor(CategoryZoneDefinition zone, int index) {
         if (zone.scan() != null) {
             long slices = zone.scan().slices().stream().filter(slice -> slice.reason().isEmpty()).count();
-            long containers = zone.scan().blocks().stream()
-                    .filter(dev.stowling.v2.scan.CategoryScanBlock::container).count();
+            long containers = dev.stowling.v2.scan.CategoryScanEngine.storageBlocks(zone.scan()).size();
             if (slices * containers == zone.bindings().size()) {
                 return dev.stowling.v2.scan.CategoryScanEngine.templateFor(zone.scan(), index);
             }

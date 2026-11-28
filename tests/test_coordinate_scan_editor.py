@@ -89,6 +89,28 @@ def test_corrected_ranges_are_written_into_the_mother_without_reusing_effective_
     assert result["scan"]["slices"][2]["reason"]
 
 
+@pytest.mark.skipif(NODE is None, reason="Node.js is required")
+def test_logical_display_slot_round_trips_until_its_physical_region_is_redrawn() -> None:
+    result = run_model(SCAN_SETUP + """
+        scan.markerAnchors = {[templateId]: [{x: 1, y: 64, z: 3}]};
+        const value = model.resources(directory)[0];
+        const saved = model.payload(value);
+        const duplicate = model.payload(model.copy(value));
+        const restored = model.resources({categoryZones: [{...raw, scan: saved.scan}]})[0];
+        const reloaded = model.payload(restored);
+        restored.bindings[0].markerRegion.first.z = 4;
+        restored.bindings[0].markerRegion.second.z = 4;
+        const redrawn = model.payload(restored);
+        process.stdout.write(JSON.stringify({saved, duplicate, reloaded, redrawn}));
+    """)
+    assert result["saved"] == result["duplicate"] == result["reloaded"]
+    assert result["saved"]["scan"]["markerAnchors"] == {
+        "11111111-1111-4111-8111-111111111111": [{"x": 1, "y": 64, "z": 3}],
+    }
+    assert result["redrawn"]["scan"]["markerAnchors"] == {}
+    assert result["redrawn"]["scan"]["templates"][0]["markerArea"]["firstZ"] == 4
+
+
 def install_scan_service(page: Any) -> None:
     page.evaluate("() => {" + SCAN_SETUP + """
         const original = window.Stowling.request.bind(window.Stowling);

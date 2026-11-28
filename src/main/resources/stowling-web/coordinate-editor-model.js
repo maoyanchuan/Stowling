@@ -345,6 +345,17 @@
                             z: override.storageZ}, mode: override.mode, itemIds: override.itemIds
                     }))};
             })};
+            const anchors = {};
+            for (let index = 0; index < value.bindings.length; index++) {
+                const draft = value.bindings[index];
+                const prior = value.scan.templates.find(template => template.id === draft.id);
+                const anchor = value.scan.markerAnchors?.[draft.id];
+                if (anchor && prior && contains(draft.markerRegion, prior.markerArea)
+                        && contains(region(prior.markerArea), area(draft.markerRegion))) {
+                    anchors[result.scan.templates[index].id] = copy(anchor);
+                }
+            }
+            result.scan.markerAnchors = anchors;
         }
         return result;
     }

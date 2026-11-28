@@ -25,6 +25,9 @@ public final class CategoryScanEngine {
     private record Candidate(String axis, int step, int count, int mother, int hits, int score) {
     }
 
+    private record MarkerCandidate(AreaBounds area, int coverage, long samples, long distance) {
+    }
+
     private CategoryScanEngine() {
     }
 
@@ -94,9 +97,12 @@ public final class CategoryScanEngine {
                 best.mother());
         List<CategoryScanBlock> blocks = world.blocks().stream()
                 .filter(block -> mother.contains(block.bounds())).toList();
+        var storage = blocks.stream().filter(CategoryScanBlock::container)
+                .map(CategoryScanBlock::bounds).toList();
+        var evidence = candidateEvidence(world.markers(), options);
         List<CategoryBindingDefinition> templates = new ArrayList<>();
         for (var container : blocks.stream().filter(CategoryScanBlock::container).toList()) {
-            AreaBounds markers = candidateMarkers(world, container, best, mother);
+            AreaBounds markers = candidateMarkers(evidence, container, best, mother, storage);
             templates.add(new CategoryBindingDefinition(UUID.randomUUID(), markers,
                     container.bounds(), "DIRECT_BLOCK_ID", List.of(), List.of(), null, null,
                     false, "扫描组 " + (templates.size() + 1), false, null));
@@ -106,40 +112,87 @@ public final class CategoryScanEngine {
         return evaluate(world, scan, options);
     }
 
-    private static AreaBounds candidateMarkers(CategoryScanSnapshot world,
-            CategoryScanBlock container, Candidate candidate, AreaBounds mother) {
+    private static List<CategoryMarker> candidateEvidence(List<CategoryMarker> markers,
+            CategoryZoneOptions options) {
+        var ignored = options == null ? Set.<String>of() : Set.copyOf(options.ignoredBlockIds());
+        var excluded = options == null ? Set.<BlockPosition>of()
+                : Set.copyOf(options.excludedMarkerPositions());
+        return markers.stream().filter(marker -> !excluded.contains(marker.position()))
+                .filter(marker -> marker.source()
+                        != dev.stowling.v2.category.CategoryMarkerSource.PLACED_ITEM
+                        || !ignored.contains(marker.itemId())).toList();
+    }
+
+    private static AreaBounds candidateMarkers(List<CategoryMarker> evidence,
+            CategoryScanBlock container, Candidate candidate, AreaBounds mother,
+            List<AreaBounds> storage) {
         var box = container.bounds();
-        boolean lateralX = Set.of("north", "south").contains(container.facing());
-        List<AreaBounds> positions = new ArrayList<>();
-        for (int side : List.of(-1, 1)) {
-            int x = lateralX ? (side < 0 ? box.minX() - 1 : box.maxX() + 1) : box.minX();
-            int z = lateralX ? box.minZ() : side < 0 ? box.minZ() - 1 : box.maxZ() + 1;
-            var area = new AreaBounds(x, box.minY(), z, x, box.maxY() + 1, z);
-            if (mother.contains(area)) positions.add(area);
-        }
-        // End-facing layouts can instead display on the face in the slice plane.
-        if (positions.isEmpty()) {
-            for (int side : List.of(-1, 1)) {
-                int x = candidate.axis().equals("X") ? box.minX()
-                        : side < 0 ? box.minX() - 1 : box.maxX() + 1;
-                int z = candidate.axis().equals("Z") ? box.minZ()
-                        : side < 0 ? box.minZ() - 1 : box.maxZ() + 1;
-                var area = new AreaBounds(x, box.minY(), z, x, box.maxY() + 1, z);
-                if (mother.contains(area)) positions.add(area);
+        boolean repeatedX = candidate.axis().equals("X");
+        long minimumDepth = repeatedX ? box.minX() : box.minZ();
+        long maximumDepth = repeatedX ? box.maxX() : box.maxZ();
+        long minimumHorizontal = repeatedX ? box.minZ() : box.minX();
+        long maximumHorizontal = repeatedX ? box.maxZ() : box.maxX();
+        var positions = new java.util.LinkedHashSet<AreaBounds>();
+        long y = box.minY();
+        for (long depth = minimumDepth; depth <= maximumDepth; depth++) {
+            for (long horizontal = minimumHorizontal - 1;
+                    horizontal <= maximumHorizontal + 1; horizontal++) {
+                addCandidate(positions, mother, storage, repeatedX, depth, horizontal, y, y + 1);
+                addCandidate(positions, mother, storage, repeatedX, depth, horizontal, y - 1, y);
+                addCandidate(positions, mother, storage, repeatedX, depth, horizontal,
+                        y - 1, y - 1);
+                addCandidate(positions, mother, storage, repeatedX, depth, horizontal,
+                        y + 1, y + 1);
+                addCandidate(positions, mother, storage, repeatedX, depth, horizontal, y, y);
             }
         }
         if (positions.isEmpty()) throw new IllegalArgumentException(
-                "储存容器 " + container.position() + " 周围没有完整的候选展示位，请扩大总选区");
-        return positions.stream().max(Comparator.comparingLong(area -> {
-            long score = 0;
-            for (int i = 0; i < candidate.count(); i++) {
-                var shifted = shift(area, candidate.axis(), (i - candidate.mother()) * candidate.step());
-                if (world.markers().stream().anyMatch(marker -> shifted.contains(marker.position()))) {
-                    score++;
-                }
-            }
-            return score;
-        })).orElseThrow();
+                "储存容器 " + container.position() + " 的相邻候选位置均越出当前单片或被储存箱体占用，"
+                        + "请核对总选区与分片布局");
+        return positions.stream().map(area -> scoreCandidate(area, evidence, box, candidate))
+                .max(Comparator.comparingInt(MarkerCandidate::coverage)
+                        .thenComparingLong(MarkerCandidate::samples)
+                        .thenComparing(Comparator.comparingLong(MarkerCandidate::distance)
+                                .reversed()))
+                .orElseThrow().area();
+    }
+
+    private static void addCandidate(Set<AreaBounds> positions, AreaBounds mother,
+            List<AreaBounds> storage, boolean repeatedX, long depth, long horizontal,
+            long minimumY, long maximumY) {
+        long x = repeatedX ? depth : horizontal;
+        long z = repeatedX ? horizontal : depth;
+        long lower = Math.max(minimumY, mother.minY());
+        long upper = Math.min(maximumY, mother.maxY());
+        if (x < mother.minX() || x > mother.maxX() || z < mother.minZ() || z > mother.maxZ()
+                || lower > upper) return;
+        var area = new AreaBounds((int) x, (int) lower, (int) z, (int) x, (int) upper, (int) z);
+        if (storage.stream().noneMatch(container -> overlaps(container, area))) positions.add(area);
+    }
+
+    private static MarkerCandidate scoreCandidate(AreaBounds area, List<CategoryMarker> evidence,
+            AreaBounds storage, Candidate candidate) {
+        int coverage = 0;
+        long samples = 0;
+        long distance = 0;
+        for (int i = 0; i < candidate.count(); i++) {
+            int delta = (i - candidate.mother()) * candidate.step();
+            var shifted = shift(area, candidate.axis(), delta);
+            var targets = evidence.stream().filter(marker -> shifted.contains(marker.position()))
+                    .map(CategoryMarker::position).distinct().toList();
+            if (targets.isEmpty()) continue;
+            coverage++;
+            samples += targets.size();
+            var box = shift(storage, candidate.axis(), delta);
+            distance += targets.stream().mapToLong(p -> distance(p, box)).min().orElseThrow();
+        }
+        return new MarkerCandidate(area, coverage, samples, distance);
+    }
+
+    private static long distance(BlockPosition p, AreaBounds area) {
+        return Math.max(0L, Math.max((long) area.minX() - p.x(), (long) p.x() - area.maxX()))
+                + Math.max(0L, Math.max((long) area.minY() - p.y(), (long) p.y() - area.maxY()))
+                + Math.max(0L, Math.max((long) area.minZ() - p.z(), (long) p.z() - area.maxZ()));
     }
 
     public static CategoryScanResult evaluate(CategoryScanSnapshot world,

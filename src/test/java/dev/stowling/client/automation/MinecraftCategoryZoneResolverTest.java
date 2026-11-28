@@ -15,9 +15,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import net.minecraft.SharedConstants;
 import net.minecraft.core.BlockPos;
-import net.minecraft.server.Bootstrap;
 import net.minecraft.world.level.LevelReader;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
@@ -67,8 +65,7 @@ class MinecraftCategoryZoneResolverTest {
 
     @BeforeAll
     static void initializeRegistries() {
-        SharedConstants.tryDetectVersion();
-        Bootstrap.bootStrap();
+        MinecraftTestBootstrap.initialize();
     }
 
     @Test

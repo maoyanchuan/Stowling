@@ -90,7 +90,7 @@ def test_corrected_ranges_are_written_into_the_mother_without_reusing_effective_
 
 
 def install_scan_service(page: Any) -> None:
-    page.evaluate(SCAN_SETUP + """
+    page.evaluate("() => {" + SCAN_SETUP + """
         const original = window.Stowling.request.bind(window.Stowling);
         window.__scanRequests = [];
         window.__scanResult = {scan, bindings: effective};
@@ -114,6 +114,7 @@ def install_scan_service(page: Any) -> None:
             }
             return original(path, request);
         };
+    }
     """)
     for corner, coordinates in (("first", (0, 64, 0)), ("second", (9, 66, 5))):
         for axis, number in zip(("x", "y", "z"), coordinates):

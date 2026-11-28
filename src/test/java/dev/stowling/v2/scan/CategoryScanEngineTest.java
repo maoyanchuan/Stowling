@@ -21,9 +21,148 @@ import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 public class CategoryScanEngineTest {
+    @Test
+    void reportedSameHeightMarkerDoesNotRequireAnExtraUpperRow() {
+        var area = new AreaBounds(218, -18, -15, 221, -18, -6);
+        var blocks = new ArrayList<CategoryScanBlock>();
+        var markers = new ArrayList<CategoryMarker>();
+        for (int z = -15; z <= -6; z++) {
+            blocks.add(new CategoryScanBlock(new BlockPosition(219, -18, z),
+                    "minecraft:chest", "chest", "north", new BlockPosition(220, -18, z),
+                    0, false));
+            var display = new BlockPosition(218, -18, z);
+            blocks.add(new CategoryScanBlock(display, "minecraft:deepslate_gold_ore", "quartz",
+                    "north", null, 0, false));
+            markers.add(new CategoryMarker(display, "minecraft:deepslate_gold_ore"));
+        }
+        var result = CategoryScanEngine.preview(new CategoryScanSnapshot(area,
+                "minecraft:overworld", blocks, markers), OPTIONS);
+        assertEquals("Z", result.scan().axis());
+        assertEquals(10, result.bindings().size());
+        assertTrue(result.scan().templates().getFirst().markerArea()
+                .contains(new BlockPosition(218, -18, -15)));
+        assertEquals(-18, result.scan().templates().getFirst().markerArea().maxY());
+    }
+
+    @Test
+    void displaysBelowEitherChestHalfWorkInBothHorizontalMappings() {
+        for (boolean rotate : List.of(false, true)) {
+            for (int half : List.of(1, 2)) {
+                var blocks = new ArrayList<CategoryScanBlock>();
+                var markers = new ArrayList<CategoryMarker>();
+                for (int z = 0; z < 10; z++) {
+                    var start = new BlockPosition(1, 65, z);
+                    var end = new BlockPosition(2, 65, z);
+                    var display = new BlockPosition(half, 64, z);
+                    if (rotate) {
+                        start = swap(start);
+                        end = swap(end);
+                        display = swap(display);
+                    }
+                    blocks.add(new CategoryScanBlock(start, "minecraft:chest", "chest",
+                            rotate ? "east" : "north", end, 0, false));
+                    blocks.add(new CategoryScanBlock(display, "minecraft:deepslate_gold_ore",
+                            "quartz", "north", null, 0, false));
+                    markers.add(new CategoryMarker(display, "minecraft:deepslate_gold_ore"));
+                }
+                var area = rotate ? new AreaBounds(0, 64, 0, 9, 66, 3)
+                        : new AreaBounds(0, 64, 0, 3, 66, 9);
+                var result = CategoryScanEngine.preview(new CategoryScanSnapshot(area,
+                        "minecraft:overworld", blocks, markers), OPTIONS);
+                assertEquals(10, result.bindings().size());
+                assertEquals(64, result.scan().templates().getFirst().markerArea().maxY());
+                assertEquals(result.bindings(), CategoryScanEngine.savedBindings(result.scan()));
+            }
+        }
+    }
+
+    @Test
+    void correctedSteppedRingProducesAnEditableMotherWithoutExpandingTheSelection() {
+        int[][] chests = {{5, 9}, {8, 9}, {11, 9}, {14, 9}, {2, 8}, {17, 8},
+                {1, 6}, {18, 6}, {1, 4}, {18, 4}, {3, 2}, {6, 2}, {13, 2}, {16, 2}};
+        int[][] displays = {{4, 9}, {7, 9}, {13, 9}, {16, 9}, {3, 7}, {17, 7},
+                {2, 5}, {18, 5}, {2, 3}, {18, 3}, {5, 2}, {8, 3}, {12, 3}, {15, 2}};
+        var blocks = new ArrayList<CategoryScanBlock>();
+        var markers = new ArrayList<CategoryMarker>();
+        for (int z = 0; z < 10; z++) {
+            for (var chest : chests) {
+                var start = new BlockPosition(chest[0], chest[1], z);
+                var end = start.offset(1, 0, 0);
+                blocks.add(new CategoryScanBlock(start, "minecraft:chest", "chest", "north",
+                        end, 0, false));
+                markers.add(new CategoryMarker(start, "minecraft:chest"));
+                markers.add(new CategoryMarker(end, "minecraft:chest"));
+            }
+            for (var display : displays) {
+                var p = new BlockPosition(display[0], display[1], z);
+                blocks.add(new CategoryScanBlock(p, "minecraft:deepslate_gold_ore", "quartz",
+                        "north", null, 0, false));
+                markers.add(new CategoryMarker(p, "minecraft:deepslate_gold_ore"));
+            }
+        }
+        var area = new AreaBounds(0, 1, 0, 20, 9, 9);
+        var result = CategoryScanEngine.preview(new CategoryScanSnapshot(area,
+                "minecraft:overworld", blocks, markers), OPTIONS);
+        assertEquals("Z", result.scan().axis());
+        assertEquals(chests.length, result.scan().templates().size());
+        for (var template : result.scan().templates()) {
+            assertTrue(result.scan().mother().contains(template.markerArea()));
+            for (var block : result.scan().blocks()) {
+                if (!block.container()) continue;
+                assertFalse(template.markerArea().contains(block.position()));
+                assertFalse(template.markerArea().contains(block.partner()));
+            }
+        }
+    }
+
     public static final AreaBounds AREA = new AreaBounds(0, 64, 0, 9, 66, 5);
     public static final CategoryZoneOptions OPTIONS = new CategoryZoneOptions(
             "single", "marker", "bulk", "inside-box", "", false, "", 27);
+
+    @Test
+    void savedMaterialAndPositionExclusionsAlsoGuideCandidateScoring() {
+        var base = world(-1, -1);
+        var markers = new ArrayList<CategoryMarker>();
+        var excluded = new ArrayList<dev.stowling.v2.model.CategoryPositionDraft>();
+        for (int x = 0; x < 10; x++) {
+            var left = new BlockPosition(x, 64, 0);
+            markers.add(new CategoryMarker(left, "minecraft:grass_block"));
+            excluded.add(dev.stowling.v2.model.CategoryPositionDraft.of(left));
+            markers.add(new CategoryMarker(new BlockPosition(x, 64, 3),
+                    "minecraft:deepslate_gold_ore"));
+        }
+        var snapshot = new CategoryScanSnapshot(AREA, base.dimension(), base.blocks(), markers);
+        var disabled = new CategoryZoneOptions("single", "marker", "bulk", "inside-box", "",
+                false, "minecraft:grass_block", 27, false, excluded, false, false, List.of());
+        var material = new CategoryZoneOptions("single", "marker", "bulk", "inside-box", "",
+                true, "minecraft:grass_block", 27);
+        var positions = new CategoryZoneOptions("single", "marker", "bulk", "inside-box", "",
+                false, "", 27, true, excluded, false, false, List.of());
+        assertEquals(0, CategoryScanEngine.preview(snapshot, disabled).scan().templates()
+                .getFirst().markerArea().minZ());
+        for (var options : List.of(material, positions)) {
+            var result = CategoryScanEngine.preview(snapshot, options);
+            assertEquals(3, result.scan().templates().getFirst().markerArea().minZ());
+            assertEquals(10, result.bindings().size());
+        }
+    }
+
+    @Test
+    void conflictingUpperAndLowerItemsStillSkipTheSliceInsteadOfSelectingOnlyOneCell() {
+        var base = world(-1, -1);
+        var markers = new ArrayList<CategoryMarker>();
+        for (int x = 0; x < 10; x++) {
+            markers.add(new CategoryMarker(new BlockPosition(x, 64, 3), "minecraft:stone"));
+            markers.add(new CategoryMarker(new BlockPosition(x, 65, 3), "minecraft:dirt"));
+        }
+        var result = CategoryScanEngine.preview(new CategoryScanSnapshot(AREA, base.dimension(),
+                base.blocks(), markers), OPTIONS);
+        assertTrue(result.bindings().isEmpty());
+        assertEquals(64, result.scan().templates().getFirst().markerArea().minY());
+        assertEquals(65, result.scan().templates().getFirst().markerArea().maxY());
+        assertTrue(result.scan().slices().stream()
+                .allMatch(slice -> slice.reason().contains("多个物品")));
+    }
 
     public static CategoryScanSnapshot world(int missing, int single) {
         var blocks = new ArrayList<CategoryScanBlock>();

@@ -482,3 +482,75 @@ def test_resize_preserves_hidden_blocks_coordinates_and_undo(scan_page: Any) -> 
     resize.click()
     assert page.locator(".classic-grid").get_attribute("height") == str(16 * 26)
     assert "正整数" in page.locator(".classic-hint").inner_text()
+
+
+def mark_cell(page: Any, col: float, row: float, end: tuple[float, float] | None = None) -> None:
+    grid = page.locator(".classic-grid")
+    grid.scroll_into_view_if_needed()
+    bounds = grid.bounding_box()
+    assert bounds is not None
+    size = bounds["width"] * 26 / float(grid.get_attribute("width"))
+    x, y = bounds["x"], bounds["y"]
+    page.mouse.move(x + col * size, y + row * size)
+    page.mouse.down()
+    if end:
+        page.mouse.move(x + end[0] * size, y + end[1] * size, steps=3)
+    page.mouse.up()
+
+
+def test_annotation_form_round_trip_and_shared_station(scan_page: Any) -> None:
+    page = scan_page
+    page.locator('[data-coordinate-id="scanned-zone-demo"]').click()
+    page.get_by_role("button", name="区域与站位", exact=True).click()
+    sidebar = page.locator(".area-sidebar")
+    sidebar.get_by_role("button", name="＋ 绑定组").click()
+    sidebar.get_by_label("当前绑定组名称").fill("上层双箱")
+    mark_cell(page, 4.5, 1.5)
+    sidebar.locator('[data-area-tool="storage"]').click()
+    mark_cell(page, 5.5, 1.5)
+    card = page.locator(".category-binding-card").last
+    fields = card.locator('[data-binding-region="storage"][data-binding-axis="z"]')
+    assert [field.input_value() for field in fields.all()] == ["5", "6"]
+    marker = card.locator('[data-binding-region="marker"][data-binding-axis="x"]')
+    assert [field.input_value() for field in marker.all()] == ["0", "0"]
+    sidebar.get_by_role("button", name="＋ 点选站位").click()
+    mark_cell(page, 7.5, 7.5)
+    sidebar.get_by_role("checkbox").first.check()
+    assert sidebar.get_by_role("checkbox").last.is_checked()
+    page.locator("#category-generated-toggle").click()
+    card.locator(".category-binding-toggle").click()
+    assert card.locator(".category-binding-name").input_value() == "上层双箱"
+    fields.last.fill("8")
+    group_id = card.get_attribute("data-binding-id")
+    rect = page.locator(f'[data-area="storage"][data-group="{group_id}"] > rect').first
+    assert rect.get_attribute("width") == str(4 * 26 - 2)
+    page.locator("#save-coordinate").click()
+    page.locator('[data-coordinate-id="home"]').click()
+    page.locator('[data-coordinate-id="scanned-zone-demo"]').click()
+    page.get_by_role("button", name="区域与站位", exact=True).click()
+    assert rect.get_attribute("width") == str(4 * 26 - 2)
+    sidebar.get_by_role("button", name="站位 2", exact=True).click()
+    assert all(check.is_checked() for check in sidebar.get_by_role("checkbox").all())
+
+
+def test_pending_annotations_are_isolated_and_stale_regions_are_read_only(scan_page: Any) -> None:
+    page = scan_page
+    page.locator('[data-coordinate-id="scanned-zone-demo"]').click()
+    page.locator("#category-scan-start").click()
+    page.get_by_role("button", name="区域与站位", exact=True).click()
+    sidebar = page.locator(".area-sidebar")
+    sidebar.get_by_role("button", name="＋ 绑定组").click()
+    assert page.locator("#category-scan-apply").is_disabled()
+    mark_cell(page, 2.5, 2.5, (3.5, 3.5))
+    sidebar.locator('[data-area-tool="storage"]').click()
+    mark_cell(page, 5.5, 1.5)
+    assert page.locator("#category-scan-apply").is_enabled()
+    assert page.locator(".category-binding-card").count() == 1
+    page.locator("#category-scan-discard").click()
+    assert sidebar.locator("[data-group-choice]").count() == 1
+    page.locator("#category-scan-start").click()
+    sidebar.get_by_label("当前绑定组名称").fill("预览组")
+    page.locator("#category-scan-apply").click()
+    assert page.locator(".category-binding-name").input_value() == "预览组"
+    page.locator("#category-overall-first-z").fill("1")
+    assert sidebar.get_by_role("button", name="＋ 绑定组").is_disabled()

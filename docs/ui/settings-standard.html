@@ -26,6 +26,7 @@
     <script src="shared/template-tabs.js" defer></script>
     <script src="shared/task-console-template.js" defer></script>
     <script src="shared/classic-slice.js"></script>
+    <script src="shared/slice-annotations.js"></script>
     <script src="shared/coordinate-scan-template.js"></script>
 </head>
 <body data-active-template="task">
@@ -3125,10 +3126,19 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
                                                         调整画布
                                                     </button>
                                                 </div>
+                                                <div class="slice-modes" role="group"
+                                                     aria-label="画布编辑模式">
+                                                    <button type="button" data-canvas-mode="blocks"
+                                                            aria-pressed="true">摆放方块</button>
+                                                    <button type="button" data-canvas-mode="areas"
+                                                            aria-pressed="false">区域与站位</button>
+                                                </div>
                                                 <div class="classic-workspace">
                                                     <aside class="classic-palette" aria-label="方块">
                                                         <strong>方块</strong>
                                                     </aside>
+                                                    <aside class="area-sidebar" hidden
+                                                           aria-label="区域与站位"></aside>
                                                     <div class="classic-board"></div>
                                                 </div>
                                                 <div class="classic-footer">
@@ -3145,12 +3155,12 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
                                                     <strong>待应用的扫描示例</strong>
                                                     <dl class="category-scan-summary">
                                                         <div><dt>区域与绑定</dt>
-                                                            <dd>1 组绑定 · 识别区与储存区各 1 个</dd>
+                                                            <dd id="scan-binding-count">1 组绑定</dd>
                                                         </div>
                                                         <div><dt>基础设置</dt>
                                                             <dd>选区模式 · 标识物 · 散货储存</dd>
                                                         </div>
-                                                        <div><dt>站立位置</dt><dd>1 个示例站位</dd></div>
+                                                        <div><dt>站立位置</dt><dd id="scan-standing-count">1 个站位</dd></div>
                                                         <div><dt>总选区</dt>
                                                             <dd id="category-scan-range"></dd>
                                                         </div>
@@ -5038,7 +5048,7 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
                 input.type = "number";
                 input.step = "1";
                 input.required = true;
-                input.value = String(region[cornerKey][axis]);
+                input.value = region[cornerKey][axis] ?? "";
                 input.dataset.bindingRegion = regionKind;
                 input.dataset.bindingCorner = cornerKey;
                 input.dataset.bindingAxis = axis;
@@ -5178,6 +5188,7 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
             card.querySelector(".category-binding-remove").disabled = cards.length <= 1;
         });
         standingEditor?.refresh();
+        categoryScan?.refreshAnnotations();
     }
 
     /** @param {CategoryBinding[]} bindings @returns {void} */
@@ -5189,15 +5200,20 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
         values.forEach((binding, index) => {
             nodes.categoryBindings.append(createCategoryBindingCard(binding, index));
         });
+        renderStandingBindings(values);
+        updateCategoryBindingCards();
+    }
+
+    /** @param {CategoryBinding[]} values @returns {void} */
+    function renderStandingBindings(values) {
         standingEditor = window.StowlingCategoryStanding.create(values, {
             groups: standingBindingChoices, createSelect: createStandingSelect, reveal,
             nextId,
             bindInputs: window.Stowling?.bindCoordinateInputs,
-            changed: () => {}
+            changed: () => categoryScan?.refreshAnnotations()
         });
         panel.querySelector("#category-standing-settings")
             .replaceChildren(standingEditor.root);
-        updateCategoryBindingCards();
     }
 
     /** @returns {void} */
@@ -5219,6 +5235,8 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
                 );
             }
         }
+        if (Object.values(fields).some(corner =>
+            Object.values(corner).some(input => input.value.trim() === ""))) return null;
         return readRegionFields(fields);
     }
 
@@ -5962,6 +5980,45 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
 
     }
 
+    /** @returns {object[]} */
+    function annotationBindings() {
+        return Array.from(nodes.categoryBindings.children, card => ({
+            id: card.dataset.bindingId,
+            name: card.querySelector(".category-binding-name").value,
+            markerRegion: readBindingRegion(card, "marker"),
+            storageRegion: readBindingRegion(card, "storage"),
+            standingPlan: standingEditor.read(card.dataset.bindingId)
+        }));
+    }
+
+    /** @param {object[]} groups @param {string} action @param {string} id @returns {void} */
+    function writeAnnotation(groups, action, id) {
+        const group = groups.find(item => item.id === id);
+        const card = Array.from(nodes.categoryBindings.children).find(n => n.dataset.bindingId === id);
+        if (action === "add") {
+            const empty = {x: null, y: null, z: null};
+            const blank = {first: empty, second: empty};
+            nodes.categoryBindings.append(createCategoryBindingCard(
+                {...group, markerRegion: blank, storageRegion: blank},
+                nodes.categoryBindings.children.length
+            ));
+            updateCategoryBindingCards();
+        } else if (action === "remove") {
+            card.remove();
+            updateCategoryBindingCards();
+        } else if (action === "name") {
+            card.querySelector(".category-binding-name").value = group.name;
+            standingEditor.refresh();
+        } else if (action === "stations") {
+            renderStandingBindings(groups);
+        } else {
+            const region = group[action + "Region"];
+            for (const field of card.querySelectorAll(`[data-binding-region="${action}"]`)) {
+                field.value = region[field.dataset.bindingCorner][field.dataset.bindingAxis];
+            }
+        }
+    }
+
     categoryScan = window.StowlingCoordinateScan.create(nodes.categoryFields, {
         reveal,
         readRegion: () => readRegionFields(nodes.categoryOverall),
@@ -5974,7 +6031,10 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
             bindCategorySelect(control, changed);
             return () => syncCategorySelect(control);
         },
-        applyExample: region => {
+        annotationBindings,
+        writeAnnotation,
+        validStations: () => standingEditor.valid(),
+        exampleBindings: region => {
             const example = window.StowlingCoordinateScan.example(region);
             const binding = {
                 id: nextId(), name: "扫描绑定组（示例）", optionsEnabled: false,
@@ -5985,8 +6045,11 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
                     subregionsEnabled: false, expanded: false
                 }]}
             };
+            return [binding];
+        },
+        applyExample: bindings => {
             writeCategoryOptions({...defaultCategoryOptions(), scopeMode: "selection"});
-            renderCategoryBindings([binding]);
+            renderCategoryBindings(bindings);
             updateCategoryOptionState(globalCategoryContext, false);
             for (const card of nodes.categoryBindings.children) {
                 updateCategoryOptionState(bindingOptions.get(card), false);

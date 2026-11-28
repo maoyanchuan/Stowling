@@ -52,6 +52,13 @@
         content.append(root.querySelector(".category-options"),
             root.querySelector(".category-binding-section"));
         let draft = {mode: "manual", previewRegion: null, appliedRegion: null, expanded: false};
+        const annotations = window.StowlingSliceAnnotations.create(root, () =>
+            draft.previewRegion ? draft.previewBindings : helpers.annotationBindings(),
+        (groups, action, id) => {
+            if (draft.previewRegion) draft.previewBindings = groups;
+            else helpers.writeAnnotation(groups, action, id);
+            update(false);
+        }, () => Boolean(draft.previewRegion) || helpers.validStations());
         const syncSelect = helpers.bindMode(modeRow, () => {
             draft.mode = mode.value;
             helpers.closeMenus();
@@ -90,9 +97,10 @@
             const freshApplied = canSave();
             start.disabled = !region;
             start.textContent = draft.appliedRegion ? "重新预览扫描示例" : "预览扫描示例";
-            apply.disabled = !freshPreview;
-            toggle.hidden = !scanning || !draft.appliedRegion;
-            const showDetails = !scanning || Boolean(draft.appliedRegion && draft.expanded);
+            const complete = draft.previewBindings?.every(g => g.markerRegion && g.storageRegion);
+            apply.disabled = !freshPreview || !complete;
+            toggle.hidden = !scanning || !draft.appliedRegion || Boolean(draft.previewRegion);
+            const showDetails = !scanning || Boolean(!draft.previewRegion && draft.appliedRegion && draft.expanded);
             configuration.disabled = !showDetails;
             toggle.setAttribute("aria-expanded", String(showDetails));
             helpers.reveal(scan, scanning, animate);
@@ -103,7 +111,14 @@
                 ? draft.previewPieces : draft.appliedPieces,
                 regionKey(mapRegion) !== regionKey(region), Boolean(draft.previewRegion),
                 draft.previewRegion ? draft.previewSize : draft.appliedSize);
+            annotations.render(scanning ? mapRegion : null,
+                regionKey(mapRegion) !== regionKey(region));
             if (draft.previewRegion) {
+                root.querySelector("#scan-binding-count").textContent =
+                    draft.previewBindings.length + " 组绑定";
+                const stations = new Set(draft.previewBindings.flatMap(g =>
+                    (g.standingPlan?.points || []).map(p => p.standingId)));
+                root.querySelector("#scan-standing-count").textContent = stations.size + " 个站位";
                 const format = point => `${point.x}, ${point.y}, ${point.z}`;
                 range.textContent = `${format(draft.previewRegion.first)} → `
                     + format(draft.previewRegion.second);
@@ -114,7 +129,8 @@
             } else if (draft.previewRegion && !freshPreview) {
                 message = "总选区已改变，此预览已过期。请重新预览后再应用。";
             } else if (draft.previewRegion) {
-                message = "示例已生成，尚未应用。当前配置保持原样。";
+                message = complete ? "示例已生成，尚未应用。当前配置保持原样。"
+                    : "请为每个绑定组画好识别区和储存区，再应用示例配置。";
             } else if (draft.appliedRegion && !freshApplied) {
                 message = "总选区已改变，已有配置待更新。请重新预览并应用后保存。";
             } else if (draft.appliedRegion) {
@@ -135,6 +151,7 @@
             draft.previewPieces = {};
             draft.previewSize = null;
             draft.previewRegion = structuredClone(region);
+            draft.previewBindings = helpers.exampleBindings(region);
             classic.reset();
             update();
         }
@@ -143,13 +160,15 @@
         function applyPreview() {
             if (!draft.previewRegion
                     || regionKey(draft.previewRegion) !== regionKey(currentRegion())) return;
-            helpers.applyExample(draft.previewRegion);
+            if (apply.disabled) return;
+            helpers.applyExample(draft.previewBindings);
             draft.appliedRegion = structuredClone(draft.previewRegion);
             draft.appliedSize = draft.previewSize;
             draft.appliedPieces = structuredClone(draft.previewPieces || {});
             draft.previewPieces = {};
             draft.previewSize = null;
             draft.previewRegion = null;
+            delete draft.previewBindings;
             classic.reset();
             draft.expanded = false;
             update();
@@ -160,6 +179,10 @@
         function load(value) {
             draft = value ? structuredClone(value)
                 : {mode: "manual", previewRegion: null, appliedRegion: null, expanded: false};
+            if (draft.previewRegion && !draft.previewBindings) {
+                draft.previewBindings = helpers.exampleBindings(draft.previewRegion);
+            }
+            annotations.reset();
             mode.value = draft.mode === "scan" ? "scan" : "manual";
             classic.reset();
             syncSelect();
@@ -175,6 +198,7 @@
         apply.addEventListener("click", applyPreview);
         discard.addEventListener("click", () => {
             draft.previewRegion = null;
+            delete draft.previewBindings;
             draft.previewPieces = {};
             draft.previewSize = null;
             classic.reset();
@@ -188,8 +212,9 @@
         });
         root.addEventListener("input", event => {
             if (event.target.id.startsWith("category-overall-")) update();
+            else if (configuration.contains(event.target)) annotations.refresh();
         });
-        return {load, read, canSave};
+        return {load, read, canSave, refreshAnnotations: annotations.refresh};
     }
 
     window.StowlingCoordinateScan = {example, create};

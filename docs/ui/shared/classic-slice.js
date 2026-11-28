@@ -16,7 +16,8 @@
         return el;
     }
 
-    /** @param {HTMLElement} root @param {(positions: object) => void} changed @returns {object} */
+    /** @param {HTMLElement} root @param {(positions: object, size: object|null) => void} changed
+     * @returns {object} */
     function create(root, changed) {
         const figure = root.querySelector(".classic-slice");
         const feedback = figure.querySelector(".classic-hint");
@@ -32,6 +33,10 @@
         const remove = figure.querySelector(".classic-delete");
         let picked = null;
         let paletteDrag = null;
+        const columnInput = figure.querySelector(".classic-columns");
+        const rowInput = figure.querySelector(".classic-rows");
+        const resize = figure.querySelector(".classic-resize");
+        let size = null;
         let history = [];
         let columns = 0;
         let rows = 0;
@@ -96,7 +101,7 @@
         function fits(piece, x, y) {
             if (x < 0 || x + piece.width > columns || y < 0 || y >= rows) return false;
             for (const other of pieces.values()) {
-                if (other.visible && other !== piece && other.y === y
+                if (other !== piece && other.y === y
                         && x < other.x + other.width && x + piece.width > other.x) return false;
             }
             return true;
@@ -134,8 +139,8 @@
 
         /** @param {object} next @param {string|null} focusId @returns {void} */
         function apply(next, focusId) {
-            history.push(positions);
-            changed(next);
+            history.push({positions, size});
+            changed(next, size);
             selectPiece(focusId);
             const focus = pieces.get(focusId)?.node || undo;
             focus.focus({preventScroll: true});
@@ -417,14 +422,42 @@
             });
         }
 
-        /** @param {object} region @returns {boolean} */
+        /** @returns {void} */
+        function resizeCanvas() {
+            if (locked || drag || paletteDrag) return;
+            const inputs = [columnInput, rowInput];
+            const values = inputs.map(input => Number(input.value.trim()));
+            const invalid = values.findIndex((n, i) => !/^\d+$/.test(inputs[i].value.trim())
+                || !Number.isSafeInteger(n * unit) || n < 1);
+            if (invalid >= 0) {
+                feedback.textContent = "画布列数和行数须填写正整数。";
+                inputs[invalid].focus();
+                return;
+            }
+            const [nextColumns, nextRows] = values;
+            if (nextColumns === columns && nextRows === rows) return;
+            history.push({positions, size});
+            changed(positions, {columns: nextColumns, rows: nextRows});
+        }
+
+        resize.addEventListener("click", resizeCanvas);
+        for (const input of [columnInput, rowInput]) {
+            input.addEventListener("keydown", event => {
+                if (event.key === "Enter") {
+                    event.preventDefault();
+                    resizeCanvas();
+                }
+            });
+        }
+
+        /** @param {object} region @returns {void} */
         function setBounds(region) {
             const width = Math.abs(region.second.z - region.first.z) + 1;
             const height = Math.abs(region.second.y - region.first.y) + 1;
-            columns = Math.min(width, 15);
-            rows = Math.min(height, 10);
+            columns = size?.columns ?? width;
+            rows = size?.rows ?? height;
             origin = {x: Math.min(region.first.x, region.second.x),
-                y: Math.min(region.first.y, region.second.y) + rows - 1,
+                y: Math.max(region.first.y, region.second.y),
                 z: Math.min(region.first.z, region.second.z)};
             const key = JSON.stringify([origin, rows, columns]);
             if (key !== extent) {
@@ -438,7 +471,9 @@
                 cellX = Math.min(cellX, columns - 1);
                 cellY = Math.min(cellY, rows - 1);
             }
-            return columns < width || rows < height;
+            columnInput.value = String(columns);
+            rowInput.value = String(rows);
+            columnInput.disabled = rowInput.disabled = resize.disabled = locked;
         }
 
         /** @returns {void} */
@@ -452,23 +487,26 @@
         }
 
         undo.addEventListener("click", () => {
-            if (!locked && history.length) changed(history.pop());
+            if (locked || !history.length) return;
+            const previous = history.pop();
+            changed(previous.positions, previous.size);
         });
 
         /** @param {object|null} region @param {object} saved @param {boolean} stale
-         * @param {boolean} preview @returns {void} */
-        function render(region, saved, stale, preview) {
+         * @param {boolean} preview @param {object|null} savedSize @returns {void} */
+        function render(region, saved, stale, preview, savedSize) {
             cancel();
             cancelPaletteDrag();
             figure.hidden = !region;
             locked = stale || !region;
             if (!region) return;
-            const partial = setBounds(region);
+            size = savedSize || null;
+            setBounds(region);
             positions = saved || {};
             figure.dataset.stage = stale ? "stale" : preview ? "pending" : "applied";
             const stage = stale ? "选区已变更" : preview ? "待应用" : "已应用";
             figure.querySelector(".classic-stage").textContent =
-                `${stage} · X = ${origin.x}${partial ? " · 局部" : ""}`;
+                `${stage} · X = ${origin.x}`;
             feedback.textContent = stale ? "选区已变更，重新预览后可移动构件。" : hint;
             undo.disabled = locked || !history.length;
             updatePalette();
@@ -506,6 +544,10 @@
                 node.setAttribute("aria-disabled", String(locked));
                 node.setAttribute("tabindex", locked || !piece.visible ? "-1" : "0");
                 node.setAttribute("aria-label", coordinates(piece, x, y));
+            }
+            const hiddenCount = Array.from(pieces.values()).filter(piece => !piece.visible).length;
+            if (hiddenCount && !locked) {
+                feedback.textContent = `画布外保留了 ${hiddenCount} 个构件，扩大画布可查看。`;
             }
             selectPiece(pieces.get(picked)?.visible ? picked : null);
 

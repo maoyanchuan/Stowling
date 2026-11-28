@@ -241,7 +241,8 @@ def test_result_limits_the_visible_area_to_the_snapshot(scan_page: Any) -> None:
     assert page.locator(".classic-grid").get_attribute("width") == "26"
     page.locator("#category-overall-second-z").fill("10000")
     page.locator("#category-scan-start").click()
-    assert "局部" in page.locator(".classic-stage").inner_text()
+    assert page.locator(".classic-columns").input_value() == "9971"
+    assert page.locator(".classic-grid").get_attribute("width") == str(9971 * 26)
 
 
 def test_classic_layout_drags_snaps_and_keeps_applied_snapshot(scan_page: Any) -> None:
@@ -443,3 +444,41 @@ def test_slab_toggles_in_place_and_keeps_upper_half_after_save(scan_page: Any) -
     page.locator('[data-coordinate-id="home"]').click()
     page.locator('[data-coordinate-id="scanned-zone-demo"]').click()
     assert art.get_attribute("y") == "-13"
+
+
+def test_resize_preserves_hidden_blocks_coordinates_and_undo(scan_page: Any) -> None:
+    page = scan_page
+    page.locator('[data-coordinate-id="scanned-zone-demo"]').click()
+    columns = page.get_by_label("列数", exact=True)
+    rows = page.get_by_label("行数", exact=True)
+    resize = page.get_by_role("button", name="调整画布")
+    glass = page.locator('.classic-board [data-kind="glass"]').first
+    label = glass.get_attribute("aria-label")
+    columns.fill("5")
+    rows.fill("4")
+    resize.click()
+    assert glass.is_hidden()
+    assert "画布外" in page.locator(".classic-hint").inner_text()
+    page.locator(".classic-undo").click()
+    assert columns.input_value() == "15"
+    assert rows.input_value() == "10"
+    assert glass.is_visible()
+    columns.fill("24")
+    rows.fill("16")
+    rows.press("Enter")
+    assert page.locator(".classic-grid").get_attribute("width") == str(24 * 26)
+    assert page.locator(".classic-grid").get_attribute("height") == str(16 * 26)
+    assert glass.get_attribute("aria-label") == label
+    page.locator("#save-coordinate").click()
+    page.locator('[data-coordinate-id="home"]').click()
+    page.locator('[data-coordinate-id="scanned-zone-demo"]').click()
+    assert columns.input_value() == "24"
+    assert rows.input_value() == "16"
+    page.locator("#category-scan-start").click()
+    assert columns.input_value() == "15"
+    page.locator("#category-scan-discard").click()
+    assert columns.input_value() == "24"
+    rows.fill("0")
+    resize.click()
+    assert page.locator(".classic-grid").get_attribute("height") == str(16 * 26)
+    assert "正整数" in page.locator(".classic-hint").inner_text()

@@ -36,7 +36,8 @@
 
 .classic-board svg {
     display: block;
-    width: min(100%, var(--board-width, 620px));
+    width: var(--board-width);
+    max-width: none;
     height: auto;
     margin: 14px auto;
     background: var(--panel-solid);
@@ -128,8 +129,28 @@
     flex: none;
 }
 
+.classic-size {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px 14px;
+    padding: 8px 16px;
+    background: var(--panel-solid);
+    border-bottom: 1px solid var(--line);
+}
+
+.classic-size label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.classic-size input { width: 5em; }
+
 .classic-board {
     align-self: center;
+    overflow: auto;
+    max-height: min(70vh, 680px);
     min-width: 0;
     padding: 0 10px;
 }

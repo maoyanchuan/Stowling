@@ -39,9 +39,14 @@
         const details = root.querySelector("#category-details");
         const configuration = root.querySelector("#category-configuration");
         const content = root.querySelector("#category-configuration-content");
-        const classic = window.StowlingClassicSlice.create(root, positions => {
-            if (draft.previewRegion) draft.previewPieces = positions;
-            else draft.appliedPieces = positions;
+        const classic = window.StowlingClassicSlice.create(root, (positions, size) => {
+            if (draft.previewRegion) {
+                draft.previewPieces = positions;
+                draft.previewSize = size;
+            } else {
+                draft.appliedPieces = positions;
+                draft.appliedSize = size;
+            }
             update(false);
         });
         content.append(root.querySelector(".category-options"),
@@ -96,7 +101,8 @@
             const mapRegion = draft.previewRegion || draft.appliedRegion;
             classic.render(scanning ? mapRegion : null, draft.previewRegion
                 ? draft.previewPieces : draft.appliedPieces,
-                regionKey(mapRegion) !== regionKey(region), Boolean(draft.previewRegion));
+                regionKey(mapRegion) !== regionKey(region), Boolean(draft.previewRegion),
+                draft.previewRegion ? draft.previewSize : draft.appliedSize);
             if (draft.previewRegion) {
                 const format = point => `${point.x}, ${point.y}, ${point.z}`;
                 range.textContent = `${format(draft.previewRegion.first)} → `
@@ -112,7 +118,7 @@
             } else if (draft.appliedRegion && !freshApplied) {
                 message = "总选区已改变，已有配置待更新。请重新预览并应用后保存。";
             } else if (draft.appliedRegion) {
-                message = Object.keys(draft.appliedPieces || {}).length
+                message = draft.appliedSize || Object.keys(draft.appliedPieces || {}).length
                     ? "单片结构已手动调整，点击保存坐标可保留本次草稿。"
                     : "已应用示例配置，可直接编辑单片结构，或展开查看区域参数。";
             }
@@ -127,6 +133,7 @@
             const region = currentRegion();
             if (!region) return;
             draft.previewPieces = {};
+            draft.previewSize = null;
             draft.previewRegion = structuredClone(region);
             classic.reset();
             update();
@@ -138,8 +145,10 @@
                     || regionKey(draft.previewRegion) !== regionKey(currentRegion())) return;
             helpers.applyExample(draft.previewRegion);
             draft.appliedRegion = structuredClone(draft.previewRegion);
+            draft.appliedSize = draft.previewSize;
             draft.appliedPieces = structuredClone(draft.previewPieces || {});
             draft.previewPieces = {};
+            draft.previewSize = null;
             draft.previewRegion = null;
             classic.reset();
             draft.expanded = false;
@@ -167,6 +176,7 @@
         discard.addEventListener("click", () => {
             draft.previewRegion = null;
             draft.previewPieces = {};
+            draft.previewSize = null;
             classic.reset();
             update();
             start.focus();

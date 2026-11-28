@@ -1,6 +1,29 @@
 (() => {
     "use strict";
 
+    /** @param {object} region @returns {object} */
+    function example(region) {
+        const first = {};
+        const second = {};
+        for (const axis of ["x", "y", "z"]) {
+            first[axis] = Math.min(region.first[axis], region.second[axis]);
+            second[axis] = Math.max(region.first[axis], region.second[axis]);
+        }
+        // Synthetic structure only. These offsets do not infer anything about a game world.
+        /** @param {number} y @param {number} z @returns {object} */
+        const at = (y, z) => ({
+            x: first.x, y: Math.min(first.y + y, second.y),
+            z: Math.min(first.z + z, second.z)
+        });
+        /** @param {object} lower @param {object} upper @returns {object} */
+        const span = (lower, upper) => ({first: lower, second: {...upper, x: second.x}});
+        return {
+            markerRegion: span(at(3, 9), at(4, 9)),
+            storageRegion: span(at(1, 3), at(2, 3)),
+            standing: at(0, 6)
+        };
+    }
+
     /** @param {object} root @param {object} helpers @returns {object} */
     function create(root, helpers) {
         const modeRow = root.querySelector("#category-setup-row");
@@ -16,12 +39,6 @@
         const details = root.querySelector("#category-details");
         const configuration = root.querySelector("#category-configuration");
         const content = root.querySelector("#category-configuration-content");
-        const mapHost = root.querySelector("#category-scan-map");
-        const map = window.StowlingCoordinateSlicePlan.create(mapHost, cells => {
-            if (draft.previewRegion) draft.previewCells = cells;
-            else draft.appliedCells = cells;
-            update(false);
-        });
         const classic = window.StowlingClassicSlice.create(root, positions => {
             if (draft.previewRegion) draft.previewPieces = positions;
             else draft.appliedPieces = positions;
@@ -77,16 +94,9 @@
             helpers.reveal(preview, Boolean(draft.previewRegion), animate);
             helpers.reveal(details, showDetails, animate);
             const mapRegion = draft.previewRegion || draft.appliedRegion;
-            classic.render(Boolean(scanning && mapRegion), draft.previewRegion
+            classic.render(scanning ? mapRegion : null, draft.previewRegion
                 ? draft.previewPieces : draft.appliedPieces,
                 regionKey(mapRegion) !== regionKey(region), Boolean(draft.previewRegion));
-            if (mapRegion) {
-                const stage = regionKey(mapRegion) !== regionKey(region) ? "stale"
-                    : draft.previewRegion ? "pending" : "applied";
-                map.render(mapRegion, stage, draft.previewRegion
-                    ? draft.previewCells : draft.appliedCells);
-            }
-            helpers.reveal(mapHost, Boolean(mapRegion), animate);
             if (draft.previewRegion) {
                 const format = point => `${point.x}, ${point.y}, ${point.z}`;
                 range.textContent = `${format(draft.previewRegion.first)} → `
@@ -102,7 +112,7 @@
             } else if (draft.appliedRegion && !freshApplied) {
                 message = "总选区已改变，已有配置待更新。请重新预览并应用后保存。";
             } else if (draft.appliedRegion) {
-                message = Object.keys(draft.appliedCells || {}).length
+                message = Object.keys(draft.appliedPieces || {}).length
                     ? "单片结构已手动调整，点击保存坐标可保留本次草稿。"
                     : "已应用示例配置，可直接编辑单片结构，或展开查看区域参数。";
             }
@@ -118,8 +128,7 @@
             if (!region) return;
             draft.previewPieces = {};
             draft.previewRegion = structuredClone(region);
-            draft.previewCells = {};
-            map.reset();
+            classic.reset();
             update();
         }
 
@@ -131,9 +140,8 @@
             draft.appliedRegion = structuredClone(draft.previewRegion);
             draft.appliedPieces = structuredClone(draft.previewPieces || {});
             draft.previewPieces = {};
-            draft.appliedCells = structuredClone(draft.previewCells || {});
             draft.previewRegion = null;
-            draft.previewCells = {};
+            classic.reset();
             draft.expanded = false;
             update();
             toggle.focus();
@@ -144,7 +152,7 @@
             draft = value ? structuredClone(value)
                 : {mode: "manual", previewRegion: null, appliedRegion: null, expanded: false};
             mode.value = draft.mode === "scan" ? "scan" : "manual";
-            map.reset();
+            classic.reset();
             syncSelect();
             update(false);
         }
@@ -159,8 +167,7 @@
         discard.addEventListener("click", () => {
             draft.previewRegion = null;
             draft.previewPieces = {};
-            draft.previewCells = {};
-            map.reset();
+            classic.reset();
             update();
             start.focus();
         });
@@ -175,5 +182,5 @@
         return {load, read, canSave};
     }
 
-    window.StowlingCoordinateScan = {create};
+    window.StowlingCoordinateScan = {example, create};
 })();

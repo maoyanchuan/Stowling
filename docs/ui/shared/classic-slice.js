@@ -2,8 +2,6 @@
     "use strict";
 
     const unit = 26;
-    const columns = 15;
-    const rows = 10;
     const names = {chest: "双箱", checker: "紫黑方块", glass: "玻璃", low: "低矮构件"};
     const directions = {ArrowLeft: [-1, 0], ArrowRight: [1, 0],
         ArrowUp: [0, -1], ArrowDown: [0, 1]};
@@ -22,7 +20,15 @@
         const feedback = figure.querySelector(".classic-hint");
         const svg = document.querySelector("#classic-slice-art").content.firstElementChild
             .cloneNode(true);
-        svg.setAttribute("viewBox", `0 0 ${columns * unit} ${rows * unit}`);
+        const grid = svg.querySelector(".classic-grid");
+        const axis = svgElement("g", {class: "classic-axis", "aria-hidden": "true"});
+        svg.append(axis);
+        const undo = figure.querySelector(".classic-undo");
+        let history = [];
+        let columns = 0;
+        let rows = 0;
+        let origin = {};
+        let extent = "";
         svg.setAttribute("role", "group");
         svg.setAttribute("aria-label", "经典单片方格编辑区");
         figure.querySelector(".classic-board").append(svg);
@@ -61,12 +67,19 @@
             return positions[piece.id] || piece;
         }
 
+        /** @param {object} piece @param {number} x @param {number} y @returns {string} */
+        function coordinates(piece, x, y) {
+            const z = origin.z + x;
+            const range = piece.width > 1 ? `${z}…${z + piece.width - 1}` : String(z);
+            return `${names[piece.kind]} · X ${origin.x} / Y ${origin.y - y} / Z ${range}`;
+        }
+
         /** @param {object} piece @param {number} x @param {number} y @returns {boolean} */
         function fits(piece, x, y) {
             if (x < 0 || x + piece.width > columns || y < 0 || y >= rows) return false;
             return pieces.every(other => {
                 const p = position(other);
-                return other === piece || p.y !== y || x >= p.x + other.width
+                return !other.visible || other === piece || p.y !== y || x >= p.x + other.width
                     || x + piece.width <= p.x;
             });
         }
@@ -82,10 +95,16 @@
                 feedback.textContent = "请放到能容纳整个构件的空格。";
                 return;
             }
+            const current = position(piece);
+            if (current.x === x && current.y === y) {
+                feedback.textContent = coordinates(piece, x, y);
+                return;
+            }
+            history.push(positions);
             const next = {...positions, [piece.id]: {x, y}};
             if (x === piece.x && y === piece.y) delete next[piece.id];
             changed(next);
-            feedback.textContent = `${names[piece.kind]} · 第 ${x + 1} 列，第 ${y + 1} 行`;
+            feedback.textContent = coordinates(piece, x, y);
         }
 
         /** @returns {void} */
@@ -143,8 +162,8 @@
             target.setAttribute("y", row * unit);
             target.setAttribute("width", drag.piece.width * unit);
             const valid = fits(drag.piece, col, row);
-            target.setAttribute("fill", valid ? "#658a7880" : "#ac625d80");
-            target.setAttribute("stroke", valid ? "#c3eccf" : "#efaba4");
+            target.setAttribute("fill", valid ? "var(--accent-soft)" : "var(--danger)");
+            target.setAttribute("stroke", valid ? "var(--accent)" : "var(--danger)");
             place(drag.piece, x, y);
         });
         svg.addEventListener("pointerup", event => {
@@ -160,26 +179,85 @@
             });
         }
 
-        /** @param {boolean} visible @param {object} saved @param {boolean} stale
-         * @param {boolean} preview @returns {void} */
-        function render(visible, saved, stale, preview) {
+        /** @param {string} value @param {number} x @param {number} y @returns {void} */
+        function tick(value, x, y) {
+            const label = svgElement("text", {x, y, "text-anchor": "middle"});
+            label.textContent = value;
+            axis.append(label);
+        }
+
+        /** @param {object} region @returns {boolean} */
+        function setBounds(region) {
+            const width = Math.abs(region.second.z - region.first.z) + 1;
+            const height = Math.abs(region.second.y - region.first.y) + 1;
+            columns = Math.min(width, 15);
+            rows = Math.min(height, 10);
+            origin = {x: Math.min(region.first.x, region.second.x),
+                y: Math.min(region.first.y, region.second.y) + rows - 1,
+                z: Math.min(region.first.z, region.second.z)};
+            const key = JSON.stringify([origin, rows, columns]);
+            if (key !== extent) {
+                extent = key;
+                const digits = Math.max(String(origin.y).length, String(origin.y - rows + 1).length);
+                const gutter = Math.max(26, digits * 6 + 6);
+                const w = columns * unit;
+                const h = rows * unit;
+                svg.setAttribute("viewBox", `${-gutter} -22 ${gutter + w + 5} ${h + 27}`);
+                svg.style.setProperty("--board-width", (gutter + w + 5) * 1.5 + "px");
+                grid.setAttribute("width", w);
+                grid.setAttribute("height", h);
+                axis.replaceChildren();
+                tick("Y/Z", -gutter / 2, -7);
+                const stride = Math.ceil((String(origin.z + columns).length + 1) * 6 / unit);
+                for (let x = 0; x < columns; x += Math.max(1, stride)) {
+                    tick(String(origin.z + x), (x + .5) * unit, -7);
+                }
+                for (let y = 0; y < rows; y++) {
+                    tick(String(origin.y - y), -gutter / 2, (y + .5) * unit + 3);
+                }
+            }
+            return columns < width || rows < height;
+        }
+
+        /** @returns {void} */
+        function reset() {
             cancel();
+            history = [];
+        }
+
+        undo.addEventListener("click", () => {
+            if (!locked && history.length) changed(history.pop());
+        });
+
+        /** @param {object|null} region @param {object} saved @param {boolean} stale
+         * @param {boolean} preview @returns {void} */
+        function render(region, saved, stale, preview) {
+            cancel();
+            figure.hidden = !region;
+            locked = stale || !region;
+            if (!region) return;
+            const partial = setBounds(region);
             positions = saved || {};
-            locked = stale || !visible;
-            figure.hidden = !visible;
-            figure.querySelector(".classic-stage").textContent = stale ? "选区已变更"
-                : preview ? "待应用 · 侧视图" : "已应用 · 侧视图";
+            figure.dataset.stage = stale ? "stale" : preview ? "pending" : "applied";
+            const stage = stale ? "选区已变更" : preview ? "待应用" : "已应用";
+            figure.querySelector(".classic-stage").textContent =
+                `${stage} · X = ${origin.x}${partial ? " · 局部" : ""}`;
             feedback.textContent = stale ? "选区已变更，重新预览后可移动构件。" : hint;
+            undo.disabled = locked || !history.length;
             for (const piece of pieces) {
                 const p = position(piece);
+                piece.visible = p.x >= 0 && p.y >= 0 && p.x + piece.width <= columns && p.y < rows;
+                piece.node.style.display = piece.visible ? "" : "none";
                 place(piece, p.x, p.y);
                 piece.node.setAttribute("aria-disabled", String(locked));
-                piece.node.setAttribute("tabindex", locked ? "-1" : "0");
-                piece.node.setAttribute("aria-label",
-                    `${names[piece.kind]}，第 ${p.x + 1} 列，第 ${p.y + 1} 行`);
+                piece.node.setAttribute("tabindex", locked || !piece.visible ? "-1" : "0");
+                piece.node.setAttribute("aria-label", coordinates(piece, p.x, p.y));
+            }
+            if (!stale && !pieces.some(piece => piece.visible)) {
+                feedback.textContent = "此范围内没有完整的示例构件。";
             }
         }
-        return {render};
+        return {render, reset};
     }
     window.StowlingClassicSlice = {create};
 })();

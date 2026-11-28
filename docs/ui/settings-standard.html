@@ -26,7 +26,6 @@
     <script src="shared/template-tabs.js" defer></script>
     <script src="shared/task-console-template.js" defer></script>
     <script src="shared/classic-slice.js"></script>
-    <script src="shared/coordinate-slice-plan.js"></script>
     <script src="shared/coordinate-scan-template.js"></script>
 </head>
 <body data-active-template="task">
@@ -59,7 +58,7 @@
         </g>
         <g id="glass">
             <rect x="1" y="1" width="24" height="24" fill="url(#pane)"
-                  stroke="#b4dcdb" stroke-width="2"/>
+                  stroke="var(--glass-edge)" stroke-width="2"/>
             <path stroke="#d9f3ed" opacity=".72" d="m4 10 5-5m10 16 3-3"/>
         </g>
         <g id="low" shape-rendering="crispEdges">
@@ -68,10 +67,10 @@
             <path fill="#f2e5ce" d="M1 1h22v4h-3v2h-5V5h-5v2H6V5H1z"/>
         </g>
         <pattern id="block-grid" width="26" height="26" patternUnits="userSpaceOnUse">
-            <path d="M26 0H0V26" fill="none" stroke="#526360" stroke-width="1"/>
+            <path d="M26 0H0V26" fill="none" stroke="var(--line)" stroke-width="1"/>
         </pattern>
     </defs>
-    <rect width="100%" height="100%" fill="url(#block-grid)"/>
+    <rect class="classic-grid" fill="url(#block-grid)"/>
     </svg>
 </template>
 <header class="page-header">
@@ -3080,15 +3079,17 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
                                             </div>
                                             <p id="category-scan-status" class="category-scan-status"
                                                role="status" aria-live="polite"></p>
-                                            <figure class="classic-slice" hidden>
+                                            <figure id="category-scan-map" class="classic-slice" hidden>
                                                 <figcaption>
-                                                    <strong>经典单片结构</strong>
+                                                    <strong>扫描坐标结果</strong>
                                                     <span class="classic-stage"></span>
                                                 </figcaption>
                                                 <div class="classic-board"></div>
-                                                <p class="classic-hint" role="status"></p>
+                                                <div class="classic-footer">
+                                                    <p class="classic-hint" role="status"></p>
+                                                    <button type="button" class="classic-undo">撤销</button>
+                                                </div>
                                             </figure>
-                                            <section id="category-scan-map" hidden></section>
                                             <div id="category-scan-preview" hidden>
                                                 <div class="category-scan-preview-content">
                                                     <strong>待应用的扫描示例</strong>
@@ -5360,9 +5361,9 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
     /** @returns {Coordinate} */
     function scannedCoordinateExample() {
         const overallRegion = {
-            first: {x: 0, y: 64, z: 0}, second: {x: 4, y: 69, z: 9}
+            first: {x: 0, y: 64, z: 0}, second: {x: 4, y: 73, z: 14}
         };
-        const structure = window.StowlingCoordinateSlicePlan.example(overallRegion);
+        const structure = window.StowlingCoordinateScan.example(overallRegion);
         return {
             id: "scanned-zone-demo", name: "已扫描分类区（示例）", kind: "category-zone",
             folderId: "common", overallRegion,
@@ -5924,7 +5925,7 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
             return () => syncCategorySelect(control);
         },
         applyExample: region => {
-            const example = window.StowlingCoordinateSlicePlan.example(region);
+            const example = window.StowlingCoordinateScan.example(region);
             const binding = {
                 id: nextId(), name: "扫描绑定组（示例）", optionsEnabled: false,
                 markerRegion: example.markerRegion,

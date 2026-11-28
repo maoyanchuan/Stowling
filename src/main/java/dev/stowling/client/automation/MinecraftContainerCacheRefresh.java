@@ -329,7 +329,8 @@ final class MinecraftContainerCacheRefresh implements TaskModuleExecutor {
                 break;
             }
         }
-        containers.addLast(target);
+        containers.addLast(context.workspace().classificationTask()
+                ? target.forClassificationStanding() : target);
     }
 
     private TaskModuleResult openNext() {

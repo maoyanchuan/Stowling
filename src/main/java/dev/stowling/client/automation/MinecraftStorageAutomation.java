@@ -2232,7 +2232,8 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                 StoragePolicy stagingPolicy = new StoragePolicy(StorageMode.BOX_ONLY, 0,
                         true, null, false, 0, null);
                 ContainerTarget target = new ContainerTarget(staging.position(), staging.type(),
-                        staging.standingArea(), stagingPolicy, staging.partner());
+                        staging.standingArea(), stagingPolicy, staging.partner(),
+                        staging.classificationStanding());
                 ItemStack plannedKeeper = keeper == null ? ItemStack.EMPTY : keeper.box();
                 var pack = new Packing(context, target, rawOwned(), plannedKeeper, cacheSnapshots);
                 steps.add(new Step(pack, () -> {

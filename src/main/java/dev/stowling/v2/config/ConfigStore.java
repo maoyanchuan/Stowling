@@ -324,7 +324,8 @@ public final class ConfigStore {
             String path = "autoClassifyTasks[" + index + "]";
             JsonObject definition = requireObject(definitions.get(index), path);
             for (String retired : List.of(
-                    "standingSubregionsEnabled", "foodPauseResumeEnabled",
+                    "standingSubregionsEnabled", "standingRangeEnabled",
+                    "foodPauseResumeEnabled",
                     "unstackableZoneRoutingEnabled", "continuousContainerAccessEnabled",
                     "sameCategoryBoxBatching",
                     "classificationBaselineEnabled",

@@ -9,6 +9,7 @@ import baritone.api.pathing.goals.GoalNear;
 import baritone.api.pathing.goals.GoalXZ;
 import baritone.api.pathing.goals.GoalComposite;
 import dev.stowling.domain.BlockPosition;
+import dev.stowling.automation.StandingRange;
 import dev.stowling.client.automation.MinecraftPickupSafety;
 import dev.stowling.v2.model.AreaBounds;
 import dev.stowling.v2.runtime.TaskTrace;
@@ -20,6 +21,7 @@ import java.util.Set;
 import java.util.function.Predicate;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
+import net.minecraft.world.phys.AABB;
 
 public final class BaritoneNavigationService implements NavigationService {
     private final IBaritoneProvider provider;
@@ -125,6 +127,65 @@ public final class BaritoneNavigationService implements NavigationService {
         }
         BlockPos feet = context.playerFeet();
         return Optional.of(new BlockPosition(feet.getX(), feet.getY(), feet.getZ()));
+    }
+
+    @Override
+    public boolean isWithinStandingRange(AreaBounds area) {
+        LocalPlayer player = primaryBaritone().getPlayerContext().player();
+        if (player == null) return false;
+        var velocity = player.getDeltaMovement();
+        boolean settled = StandingRange.settled(area, player.getX(), player.getY(), player.getZ(),
+                player.onGround(), velocity.x, velocity.z);
+        TaskTrace.event("DECISION", "navigation.standingRange", "standingArea=" + area
+                + "; player=" + playerPosition(player) + "; grounded=" + player.onGround()
+                + "; settled=" + settled);
+        return settled;
+    }
+
+    @Override
+    public boolean navigateToStandingRange(BlockPosition target, AreaBounds area,
+            Set<BlockPosition> rejectedStances, boolean avoidPickups) {
+        IBaritone baritone = primaryBaritone();
+        LocalPlayer player = baritone.getPlayerContext().player();
+        if (player == null) return false;
+        List<AABB> hazards = avoidPickups
+                ? MinecraftPickupSafety.hazards(player, target) : List.of();
+        Optional<Goal> goal = standingRangeGoal(target, area, player.blockInteractionRange(),
+                player.getEyeHeight(), rejectedStances, feet -> !avoidPickups
+                        || MinecraftPickupSafety.safe(MinecraftPickupSafety.bodyAt(player, feet),
+                                hazards));
+        TaskTrace.event("DECISION", "navigation.standingRange.path", "target=" + target
+                + "; standingArea=" + area + "; goalAvailable=" + goal.isPresent());
+        goal.ifPresent(baritone.getCustomGoalProcess()::setGoalAndPath);
+        return goal.isPresent();
+    }
+
+    static Optional<Goal> standingRangeGoal(BlockPosition target, AreaBounds area, double reach,
+            double eyeHeight, Set<BlockPosition> rejectedStances,
+            Predicate<BlockPosition> safeStance) {
+        long margin = (long) Math.ceil(reach + eyeHeight + 1);
+        List<Goal> goals = new ArrayList<>();
+        for (long x = Math.max(area.minX(), (long) target.x() - margin);
+                x <= Math.min(area.maxX(), (long) target.x() + margin); x++) {
+            for (long z = Math.max(area.minZ(), (long) target.z() - margin);
+                    z <= Math.min(area.maxZ(), (long) target.z() + margin); z++) {
+                double closestEyeY = Math.clamp(target.y() + 0.5,
+                        StandingRange.minFeetY(area) + eyeHeight,
+                        StandingRange.maxFeetY(area) + eyeHeight);
+                if (!withinReach(target, x + 0.5, closestEyeY, z + 0.5, reach)) continue;
+                // Baritone's integer feet may be in the support block for low surfaces.
+                for (long y = Math.max((long) area.minY() - 1, (long) target.y() - margin);
+                        y <= Math.min(area.maxY(), (long) target.y() + margin); y++) {
+                    if (y < Integer.MIN_VALUE || y > Integer.MAX_VALUE) continue;
+                    var feet = new BlockPosition((int) x, (int) y, (int) z);
+                    if (!rejectedStances.contains(feet) && safeStance.test(feet)) {
+                        goals.add(new GoalBlock(feet.x(), feet.y(), feet.z()));
+                    }
+                }
+            }
+        }
+        return goals.isEmpty() ? Optional.empty()
+                : Optional.of(new GoalComposite(goals.toArray(Goal[]::new)));
     }
 
     static Optional<Goal> interactionGoal(

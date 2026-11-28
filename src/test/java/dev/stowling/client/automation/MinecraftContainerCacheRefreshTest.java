@@ -394,6 +394,7 @@ class MinecraftContainerCacheRefreshTest {
             refresh.start();
             assertEquals(TaskModuleState.SUCCEEDED, finish(refresh).state());
             assertEquals(enabled ? STANDING : null, inspection.targets.getFirst().standingArea());
+            assertEquals(enabled, inspection.targets.getFirst().classificationStanding());
         }
     }
 

@@ -84,7 +84,8 @@ final class MoveToCoordinateModule implements TaskModuleExecutor {
         if (container == null || approach == null || container.partner() != null) {
             return false;
         }
-        if (!context.navigation().isWithinInteractionRange(position, container.standingArea())) {
+        if (!context.navigation().isWithinInteractionRange(position, container.standingArea(),
+                true, container.classificationStanding())) {
             return false;
         }
         approach.cancel();
@@ -150,7 +151,7 @@ final class MoveToCoordinateModule implements TaskModuleExecutor {
         position = container.position();
         targetName = container.type();
         approach = new ContainerApproach(context.navigation(), container.standingArea(),
-                container.entrances());
+                container.entrances(), true, false, container.classificationStanding());
     }
 
     private static int manualCoordinate(TaskStep step, String key) {

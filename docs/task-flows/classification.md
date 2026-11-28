@@ -3,6 +3,15 @@
 记录日期：2026 年 11 月 25 日。
 流程标识：`classification-baseline`。适用范围：独立分类任务的一轮执行。
 
+## 已并入主流程：指定站位范围与落稳开箱
+
+2026 年 11 月 28 日，用户确认 alpha.336 测试无误并明确要求并入主线。
+独立分类对带指定站位的标记读取、目标导航与开箱固定使用范围判定、接地和低水平速度
+确认，以及真实交互距离。箱顶、下半砖、地毯等共用同一规则，其他任务保持原约定。
+删除 `standingRangeEnabled`、实验入口及启用标识；旧字段各取值统一迁移并在保存时移除。
+完整顺序、输入输出、失败及中断条件见
+[分类指定站位的范围判定与落稳开箱](classification-standing-range.md)。
+
 ## 已并入主流程：扫描与存取连续访问
 
 - 标识：`classification-continuous-container-access`；状态：**已并入主流程**。
@@ -153,6 +162,7 @@
 - `unstackableZoneRoutingEnabled`
 - `standingSubregionsEnabled`
 - `continuousContainerAccessEnabled`
+- `standingRangeEnabled`
 
 旧独立分类任务的已保存执行步骤统一生成当前主流程，并保持任务 ID、配置顺序、
 来源与目标位置、中断关系及运行相关设置。移除旧多来源模块和汇总模块。

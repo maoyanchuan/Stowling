@@ -88,6 +88,7 @@ class V2ControlServerTest {
             assertFalse(item.has("unstackableZoneRoutingEnabled"));
             assertFalse(item.has("foodPauseResumeEnabled"));
             assertFalse(item.has("continuousContainerAccessEnabled"));
+            assertFalse(item.has("standingRangeEnabled"));
             var patch = new JsonObject();
             patch.add("revision", object(saved).get("revision"));
             patch.addProperty("name", "Renamed classification");
@@ -99,9 +100,13 @@ class V2ControlServerTest {
             assertFalse(object(updated).getAsJsonObject("item")
                     .has("continuousContainerAccessEnabled"));
             for (boolean retired : List.of(false, true)) {
-                task.addProperty("continuousContainerAccessEnabled", retired);
-                assertEquals(400, fixture.send("/v1/auto-classify-tasks", "POST",
-                        task.toString(), true).statusCode());
+                for (String field : List.of("continuousContainerAccessEnabled",
+                        "standingRangeEnabled")) {
+                    task.addProperty(field, retired);
+                    assertEquals(400, fixture.send("/v1/auto-classify-tasks", "POST",
+                            task.toString(), true).statusCode());
+                    task.remove(field);
+                }
             }
             assertTrue(new ConfigStore(file).read().config().tasks().stream()
                     .flatMap(definition -> definition.steps().stream()).anyMatch(step ->

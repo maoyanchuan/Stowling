@@ -88,6 +88,6 @@ final class ContainerCacheRefreshPlan {
             return target;
         }
         return new ContainerTarget(target.partner(), target.type(), target.standingArea(),
-                target.storagePolicy(), target.position());
+                target.storagePolicy(), target.position(), target.classificationStanding());
     }
 }

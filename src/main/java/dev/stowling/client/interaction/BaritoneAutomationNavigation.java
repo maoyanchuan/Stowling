@@ -35,6 +35,7 @@ public final class BaritoneAutomationNavigation implements NavigationPort {
     private boolean stopRequested;
     private AreaBounds standingArea;
     private boolean avoidPickups = true;
+    private boolean classificationStanding;
 
     public BaritoneAutomationNavigation(
             NavigationService navigationService,
@@ -107,7 +108,14 @@ public final class BaritoneAutomationNavigation implements NavigationPort {
     @Override
     public NavigationStatus startInteraction(BlockPosition target, AreaBounds standingArea,
             boolean avoidPickups) {
-        boolean inRange = isWithinInteractionRange(target, standingArea, avoidPickups);
+        return startInteraction(target, standingArea, avoidPickups, false);
+    }
+
+    @Override
+    public NavigationStatus startInteraction(BlockPosition target, AreaBounds standingArea,
+            boolean avoidPickups, boolean classificationStanding) {
+        boolean inRange = isWithinInteractionRange(target, standingArea, avoidPickups,
+                classificationStanding);
         TaskTrace.event("DECISION", "navigation.interaction", "target=" + target
                 + "; standingArea=" + standingArea + "; avoidPickups=" + avoidPickups
                 + "; inRange=" + inRange + "; active=" + active
@@ -116,13 +124,19 @@ public final class BaritoneAutomationNavigation implements NavigationPort {
             return arrive();
         }
         this.avoidPickups = avoidPickups;
-        return beginNear(target, null, standingArea);
+        return beginNear(target, null, standingArea, classificationStanding);
     }
 
     private NavigationStatus beginNear(BlockPosition target, Integer radius, AreaBounds area) {
+        return beginNear(target, radius, area, false);
+    }
+
+    private NavigationStatus beginNear(BlockPosition target, Integer radius, AreaBounds area,
+            boolean classificationStanding) {
         Objects.requireNonNull(target, "target");
         nearNavigation = true;
         standingArea = area;
+        this.classificationStanding = classificationStanding && area != null;
         nearPathRetries = 0;
         nearRadius = radius;
         retryDelayTicks = 0;
@@ -133,6 +147,11 @@ public final class BaritoneAutomationNavigation implements NavigationPort {
 
     private NavigationStatus navigateNear(BlockPosition target, Integer radius) {
         if (nearRadius == null) {
+            if (classificationStanding) {
+                if (!navigationService.navigateToStandingRange(target, standingArea,
+                        rejectedStances, avoidPickups)) return failNavigation();
+                return NavigationStatus.NAVIGATING;
+            }
             navigationService.interactionFeet().ifPresent(rejectedStances::add);
             if (!navigationService.navigateToInteractionRange(target, standingArea,
                     rejectedStances, avoidPickups)) {
@@ -164,7 +183,8 @@ public final class BaritoneAutomationNavigation implements NavigationPort {
             return NavigationStatus.FAILED;
         }
         if (nearNavigation
-                && isWithinInteractionRange(target, standingArea, avoidPickups)) {
+                && isWithinInteractionRange(target, standingArea, avoidPickups,
+                        classificationStanding)) {
             return arrive();
         }
         BlockPosition current = world.playerPosition().orElseThrow();
@@ -240,6 +260,16 @@ public final class BaritoneAutomationNavigation implements NavigationPort {
             if (!inside) return false;
         }
         return navigationService.isWithinInteractionRange(target, avoidPickups);
+    }
+
+    @Override
+    public boolean isWithinInteractionRange(BlockPosition target, AreaBounds area,
+            boolean avoidPickups, boolean classificationStanding) {
+        if (!classificationStanding || area == null) {
+            return isWithinInteractionRange(target, area, avoidPickups);
+        }
+        return navigationService.isWithinStandingRange(area)
+                && navigationService.isWithinInteractionRange(target, avoidPickups);
     }
 
     private static double arrivalDistanceSquared(int radius) {

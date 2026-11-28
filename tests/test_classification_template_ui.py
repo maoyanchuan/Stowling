@@ -10,6 +10,36 @@ import pytest
 WEB = Path(__file__).resolve().parents[1] / "src/main/resources/stowling-web"
 
 
+@pytest.mark.parametrize("theme,width", [("green", 1000), ("gray", 1000), ("green", 390)])
+@pytest.mark.parametrize("legacy", [True, False, None, "missing"])
+def test_standing_range_baseline_has_no_switch_badge_or_empty_experiment_menu(
+    classification_page: Any, theme: str, width: int, legacy: bool | None | str,
+) -> None:
+    page = classification_page
+    page.set_viewport_size({"width": width, "height": 1000})
+    page.evaluate("theme => document.documentElement.dataset.theme = theme", theme)
+    page.evaluate("""legacy => {
+        if (legacy !== 'missing') backend.item.standingRangeEnabled = legacy;
+    }""", legacy)
+    page.locator("#refresh-move-tasks").click()
+    page.wait_for_function("!document.querySelector('#refresh-move-tasks').disabled")
+    open_settings(page)
+    for shown in [True, False]:
+        page.evaluate("""shown => {
+            window.StowlingTaskDebugMode = {enabled: () => shown};
+            document.dispatchEvent(new CustomEvent('stowling:task-debug-mode-changed'));
+        }""", shown)
+        assert page.locator("#auto-experiments-settings").is_hidden()
+        assert page.locator("#auto-experiments-settings").evaluate("el => el.inert")
+        assert page.locator("#auto-standing-range").count() == 0
+        assert page.locator("#auto-standing-range-active").count() == 0
+        assert "classification-standing-range" not in page.locator("#auto-task-list").inner_text()
+    assert not page.locator("#auto-task-list .pickup-task-header").get_by_role(
+        "switch"
+    ).is_checked()
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+
+
 def test_merged_standing_has_no_experimental_controls_or_badges(classification_page: Any) -> None:
     page = classification_page
     open_settings(page)

@@ -11,11 +11,18 @@ public record ContainerTarget(
         String type,
         AreaBounds standingArea,
         StoragePolicy storagePolicy,
-        BlockPosition partner
+        BlockPosition partner,
+        boolean classificationStanding
 ) {
+    public ContainerTarget(BlockPosition position, String type, AreaBounds standingArea,
+            StoragePolicy storagePolicy, BlockPosition partner) {
+        this(position, type, standingArea, storagePolicy, partner, false);
+    }
+
     public ContainerTarget {
         storagePolicy = storagePolicy == null
                 ? StoragePolicy.DEFAULT : storagePolicy;
+        classificationStanding = classificationStanding && standingArea != null;
         position = Objects.requireNonNull(position, "position");
         type = requireText(type, "type");
     }
@@ -38,7 +45,12 @@ public record ContainerTarget(
     }
 
     public ContainerTarget withStandingArea(AreaBounds area, StoragePolicy policy) {
-        return new ContainerTarget(position, type, area, policy, partner);
+        return new ContainerTarget(position, type, area, policy, partner, classificationStanding);
+    }
+
+    /** Runtime scope assigned only by the independent classification pipeline. */
+    public ContainerTarget forClassificationStanding() {
+        return new ContainerTarget(position, type, standingArea, storagePolicy, partner, true);
     }
 
     private static String requireText(String value, String field) {

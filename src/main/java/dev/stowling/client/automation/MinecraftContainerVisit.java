@@ -72,7 +72,7 @@ final class MinecraftContainerVisit {
         this.reusePosition = reusePosition;
         entrances = new ArrayList<>(target.entrances());
         approach = new ContainerApproach(this.navigation, target.standingArea(), entrances,
-                avoidPickups, reusePosition);
+                avoidPickups, reusePosition, target.classificationStanding());
     }
 
     TaskModuleResult tick() {
@@ -99,7 +99,7 @@ final class MinecraftContainerVisit {
             }
             openTicks = 0;
             approach = new ContainerApproach(navigation, target.standingArea(), entrances,
-                    avoidPickups, reusePosition);
+                    avoidPickups, reusePosition, target.classificationStanding());
             openRequested = null;
         }
         if (minecraft.gui.screen() != null) {

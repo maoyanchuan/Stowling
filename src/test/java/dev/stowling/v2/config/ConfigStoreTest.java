@@ -41,6 +41,28 @@ class ConfigStoreTest {
     Path directory;
 
     @Test
+    void standingRangeLegacyValuesMigrateToTheVerifiedBaselineWithoutResavingTheSwitch()
+            throws Exception {
+        for (String legacy : List.of("true", "false", "null", "missing", "\"retired\"")) {
+            var json = new Gson().toJsonTree(overflowPackingConfiguration(true, false))
+                    .getAsJsonObject();
+            var definition = json.getAsJsonArray("autoClassifyTasks").get(0).getAsJsonObject();
+            if (!legacy.equals("missing")) {
+                definition.add("standingRangeEnabled", JsonParser.parseString(legacy));
+            }
+            var path = directory.resolve("standing-range-" + legacy.hashCode() + ".json");
+            Files.writeString(path, json.toString());
+            var store = new ConfigStore(path);
+            var loaded = store.read();
+            assertEquals(1, loaded.config().autoClassifyTasks().size());
+            var saved = store.save(loaded.revision(), loaded.config());
+            assertFalse(new Gson().toJson(saved.config()).contains("standingRangeEnabled"));
+            assertFalse(Files.readString(path).contains("standingRangeEnabled"));
+            assertEquals(saved.config(), new ConfigStore(path).read().config());
+        }
+    }
+
+    @Test
     void continuousAccessLegacyValuesMigrateToOneBaselineWithoutResavingTheSwitch()
             throws Exception {
         for (String legacy : List.of("true", "false", "null", "missing", "\"retired\"")) {

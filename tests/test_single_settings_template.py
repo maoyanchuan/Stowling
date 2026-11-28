@@ -88,6 +88,17 @@ def test_theme_and_layout_stay_shared_across_tabs(
     page.set_viewport_size({"width": width, "height": 1100})
     page.locator(f'[data-theme-choice="{theme}"]').click()
     tab_bounds = page.get_by_role("tablist").bounding_box()
+    main_bounds = page.locator(".page-main").bounding_box()
+    heading_bounds = page.locator(".page-heading").bounding_box()
+    assert tab_bounds is not None and main_bounds is not None and heading_bounds is not None
+    assert tab_bounds["x"] == pytest.approx(main_bounds["x"])
+    assert tab_bounds["width"] == pytest.approx(main_bounds["width"])
+    assert tab_bounds["y"] + tab_bounds["height"] <= heading_bounds["y"]
+    if width <= 540:
+        task_bounds = page.get_by_role("tab", name="任务", exact=True).bounding_box()
+        coordinate_bounds = page.get_by_role("tab", name="坐标", exact=True).bounding_box()
+        assert task_bounds is not None and coordinate_bounds is not None
+        assert task_bounds["width"] == pytest.approx(coordinate_bounds["width"])
     for name in ["坐标", "任务", "坐标"]:
         page.get_by_role("tab", name=name, exact=True).click()
         assert page.get_by_role("tablist").bounding_box() == tab_bounds

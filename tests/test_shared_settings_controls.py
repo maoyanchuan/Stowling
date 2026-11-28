@@ -8,7 +8,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 SAMPLES = {
     "task": {
-        "file": "task-settings-standard.html",
+        "file": "settings-standard.html",
         "row": ".sample-strategy-row",
         "label": ".sample-row-label",
         "trigger": "#sample-strategy-trigger",
@@ -19,7 +19,7 @@ SAMPLES = {
         "font": "16px",
     },
     "coordinate": {
-        "file": "coordinate-management-standard.html",
+        "file": "settings-standard.html",
         "row": ".category-option-row",
         "label": ".category-option-label",
         "trigger": "#category-scope-mode-trigger",
@@ -42,7 +42,8 @@ def sample(request: pytest.FixtureRequest) -> Iterator[tuple[Any, dict[str, Any]
         errors: list[str] = []
         page.on("pageerror", lambda error: errors.append(str(error)))
         config = SAMPLES[request.param]
-        page.goto((ROOT / "docs/ui" / config["file"]).as_uri())
+        page.goto((ROOT / "docs/ui" / config["file"]).as_uri()
+                  + ("#coordinates" if request.param == "coordinate" else "#task"))
         assert errors == []
         yield page, config
         browser.close()

@@ -8,7 +8,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 WEB = ROOT / "src/main/resources/stowling-web"
-TEMPLATE = ROOT / "docs/ui/coordinate-management-standard.html"
+TEMPLATE = ROOT / "docs/ui/settings-standard.html"
 
 
 @pytest.fixture(params=["template", "editor"])
@@ -33,7 +33,8 @@ def animation_page(request: pytest.FixtureRequest) -> Iterator[Any]:
         else:
             script = html
             shared = ROOT / "docs/ui/shared"
-            for name in ("settings-theme.css", "settings-controls.css"):
+            for name in ("settings-theme.css", "template-shell.css",
+                         "coordinate-template.css", "settings-controls.css"):
                 page.add_style_tag(content=(shared / name).read_text("utf-8"))
             page.add_script_tag(content=(shared / "settings-controls.js").read_text("utf-8"))
         # Exercise each real reveal helper and stylesheet without authentication or demo state.
@@ -46,11 +47,17 @@ def animation_page(request: pytest.FixtureRequest) -> Iterator[Any]:
             state + helper.group()
             + "\nwindow.revealForTest = reveal;"
         ))
-        page.evaluate("""() => {
+        page.evaluate("""template => {
             const shell = document.querySelector('.coordinate-shell');
             const options = document.querySelector('.category-options');
             shell.replaceChildren(options);
-            document.body.replaceChildren(shell);
+            if (template) {
+                const panel = document.createElement('section');
+                panel.id = 'template-coordinates-panel';
+                panel.dataset.settingsTemplate = 'coordinates';
+                document.body.replaceChildren(panel);
+                panel.append(shell);
+            } else document.body.replaceChildren(shell);
             shell.style.display = 'block';
             shell.style.maxWidth = '700px';
             const recognition = options.querySelector('.category-recognition-panel');
@@ -62,7 +69,7 @@ def animation_page(request: pytest.FixtureRequest) -> Iterator[Any]:
             for (const row of options.querySelectorAll('.category-option-sub')) {
                 window.revealForTest(row, true, false);
             }
-        }""")
+        }""", request.param == "template")
         yield page
         browser.close()
 

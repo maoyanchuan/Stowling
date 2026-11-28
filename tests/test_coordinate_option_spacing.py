@@ -19,7 +19,7 @@ def category_page(request: pytest.FixtureRequest) -> Iterator[Any]:
         except playwright.Error as error:
             pytest.skip(f"Playwright Chromium is required: {error}")
         page = browser.new_page()
-        source = ROOT / "docs/ui/coordinate-management-standard.html"
+        source = ROOT / "docs/ui/settings-standard.html"
         if request.param == "editor":
             source = WEB / "coordinates.html"
         html = re.sub(r"<script\b[^>]*>[\s\S]*?</script>", "", source.read_text("utf-8"))
@@ -29,19 +29,26 @@ def category_page(request: pytest.FixtureRequest) -> Iterator[Any]:
             for name in ("styles.css", "workbench.css", "coordinate-editor.css"):
                 page.add_style_tag(content=(WEB / name).read_text("utf-8"))
         else:
-            for name in ("settings-theme.css", "settings-controls.css"):
+            for name in ("settings-theme.css", "template-shell.css",
+                         "coordinate-template.css", "settings-controls.css"):
                 page.add_style_tag(content=(ROOT / "docs/ui/shared" / name).read_text("utf-8"))
         # Isolate the real options markup without authentication or example-data scripts.
-        page.evaluate("""() => {
+        page.evaluate("""template => {
             const options = document.querySelector('.category-options');
-            document.body.replaceChildren(options);
+            if (template) {
+                const panel = document.createElement('section');
+                panel.id = 'template-coordinates-panel';
+                panel.dataset.settingsTemplate = 'coordinates';
+                document.body.replaceChildren(panel);
+                panel.append(options);
+            } else document.body.replaceChildren(options);
             const recognition = options.querySelector('.category-recognition-panel');
             if (recognition) recognition.hidden = false;
             options.querySelectorAll('.category-option-sub').forEach(row => {
                 row.hidden = false;
                 row.dataset.collapsed = 'false';
             });
-        }""")
+        }""", request.param == "template")
         page.add_style_tag(content="""
             body {min-height: 0; padding: 16px;}
             .category-options {max-width: 700px; margin: 0 auto;}

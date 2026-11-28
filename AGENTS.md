@@ -36,9 +36,9 @@
 ## 任务与坐标共用 UI 模板
 - 新增、修改或重构任务页面、任务模块、设置行、子菜单和下拉控件前，
   必须先读取 `docs/ui/task-ui-prompt.md`，再检查其中指定的标准 HTML 与现有实现。
-- 公共规则以 `docs/ui/settings-ui-standard.md` 为统一入口；任务卡片和坐标双栏分别使用
-  `docs/ui/task-settings-standard.html`、`docs/ui/coordinate-management-standard.html`。
-  两个示例共用 `docs/ui/shared/` 下的主题、控件和交互资源。
+- 公共规则以 `docs/ui/settings-ui-standard.md` 为统一入口；唯一可运行模板为
+  `docs/ui/settings-standard.html`，通过“任务／坐标”选项卡切换同一文档中的两个面板。
+  主题、控件、布局和交互资源统一位于 `docs/ui/shared/`，不再保留两个旧 HTML 模板。
   本次仅整合模板；未经用户明确要求，不将模板公共资源接入正式页面或执行流程。
   保留浅绿／深灰主题、控件排列、运行状态与配置编辑分离、展开动画和选项间距。
 - 模板中的任务名称、地区和数值是示例；正式页面使用项目真实字段、接口和业务逻辑。
@@ -56,15 +56,14 @@
 
 ## 坐标页面 UI 模板
 - 修改正式坐标页面、坐标资源编辑器或分类区设置前，必须先读取：
-  `docs/ui/task-ui-prompt.md`、`docs/ui/task-settings-standard.html`、
-  `docs/ui/coordinate-management-standard.html`、
+  `docs/ui/task-ui-prompt.md`、`docs/ui/settings-standard.html`、
   `src/main/resources/stowling-web/workbench.css`、
   `src/main/resources/stowling-web/styles.css`、
   `src/main/resources/stowling-web/coordinates.html`、
   `src/main/resources/stowling-web/coordinates.js`、
   `src/main/resources/stowling-web/category-zones.js`。
 - 正式坐标页面的设置行、下拉框、开关、展开箭头、主题和动画，必须参考
-  `docs/ui/coordinate-management-standard.html` 实现。
+  `docs/ui/settings-standard.html` 的“坐标”选项卡实现。
 - 模板中的名称、选项说明、坐标和数值只是界面示例；正式页面必须使用真实字段、
   接口和业务逻辑，不得直接复制示例数据。
 - 保持模板约定的浅绿／深灰主题、设置行对齐、下拉选中勾号、键盘操作、上下展开、

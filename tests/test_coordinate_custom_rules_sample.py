@@ -5,7 +5,7 @@ from typing import Any
 import pytest
 
 
-SAMPLE = Path(__file__).resolve().parents[1] / "docs/ui/coordinate-management-standard.html"
+SAMPLE = Path(__file__).resolve().parents[1] / "docs/ui/settings-standard.html"
 
 
 @pytest.fixture
@@ -18,7 +18,7 @@ def rules_page() -> Iterator[Any]:
             pytest.skip(f"Playwright Chromium is required: {error}")
         page = browser.new_page(viewport={"width": 1552, "height": 1253})
         page.emulate_media(reduced_motion="reduce")
-        page.goto(SAMPLE.as_uri())
+        page.goto(SAMPLE.as_uri() + "#coordinates")
         yield page
         browser.close()
 

@@ -8,14 +8,15 @@ import pytest
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SAMPLE = ROOT / "docs" / "ui" / "task-settings-standard.html"
+SAMPLE = ROOT / "docs" / "ui" / "settings-standard.html"
 NODE = shutil.which("node")
 pytestmark = pytest.mark.skipif(NODE is None, reason="Node.js is required")
 RUNNER = r"""
 const fs = require("node:fs");
 const vm = require("node:vm");
 const source = fs.readFileSync(process.argv[1], "utf8");
-const scripts = Array.from(source.matchAll(/<script>([\s\S]*?)<\/script>/g));
+const taskScript = source.match(
+    /<script data-template-script="task">([\s\S]*?)<\/script>/)[1];
 const nodes = new Map();
 const animations = [];
 const saved = new Map();
@@ -116,7 +117,7 @@ function load() {
     const shared = require("node:path").resolve(require("node:path").dirname(process.argv[1]),
         "shared/settings-controls.js");
     vm.runInNewContext(fs.readFileSync(shared, "utf8"), {document, window});
-    vm.runInNewContext(scripts.at(-1)[1], {document, window});
+    vm.runInNewContext(taskScript, {document, window});
 }
 Promise.resolve(eval(process.argv[2])).then(result => {
     process.stdout.write(JSON.stringify(result));

@@ -95,7 +95,7 @@ def test_classification_experiments_are_removed_and_pickup_packing_remains_in_th
 
 
 def test_runnable_template_places_experiments_last_with_an_independent_disclosure() -> None:
-    page = markup(ROOT / "docs/ui/task-settings-standard.html")
+    page = markup(ROOT / "docs/ui/settings-standard.html")
     assert page.order.index("sample-maximum") < page.order.index("sample-experiments")
     assert "sample-experiments-detail" in page.parents["sample-experiment-option"]
     assert page.attrs["sample-experiments-expand"]["aria-expanded"] == "false"

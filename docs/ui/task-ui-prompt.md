@@ -1,6 +1,6 @@
 # Stowling 任务与坐标 UI 项目提示词
 
-你正在维护 Stowling 的任务与坐标界面。两种模板布局使用同一公共 UI 标准。
+你正在维护 Stowling 的任务与坐标界面。唯一可运行模板通过“任务／坐标”选项卡切换两种布局。
 处理 UI 时，复用公共主题、控件和交互，保留对应页面的结构与设置密度。
 本轮用户的明确要求优先于模板；仅调整用户要求的范围。
 
@@ -10,8 +10,7 @@
 
 1. `AGENTS.md`：项目规范、测试授权与交付要求。
 2. `docs/ui/settings-ui-standard.md`：唯一公共规范及资源职责。
-3. `docs/ui/task-settings-standard.html`、`docs/ui/coordinate-management-standard.html`：
-   共用标准的任务与坐标可运行示例。
+3. `docs/ui/settings-standard.html`：唯一可运行模板，内含任务与坐标两个选项卡。
 4. 本提示词：业务语义和不可遗漏的交互要求。
 5. `docs/ui/shared/settings-theme.css`、`settings-controls.css`、
    `settings-controls.js`：模板共用配色、控件和交互实现。
@@ -21,7 +20,8 @@
 模板保存在仓库中，可以离线打开。不要依赖聊天附件、临时截图或本机预览端口。
 已有测试只能证明其实际覆盖的行为，不能据此宣称界面已与模板视觉一致。
 
-正式坐标页面 `coordinates.html` 直接使用 `coordinate-management-standard.html` 的双栏结构。
+正式坐标页面 `coordinates.html` 保持原有双栏实现，外观规范参考
+`settings-standard.html` 的“坐标”选项卡；本次合并没有向正式页面接入选项卡或模板资源。
 坐标模板的左栏整条用于坐标展示：列表填满标题、操作按钮与底部统计之间的剩余高度，
 随右侧编辑区拉伸到底，不再限制为 360px 的小展示区；内容超出时仅在列表内滚动。
 列表条目保持自然高度并从顶部排列，不能为填满左栏而拉高单个文件夹或坐标项。
@@ -291,8 +291,8 @@
 
 - 复用项目的浅绿和深灰主题变量，两套主题使用相同结构与交互。
 - 模板配色统一维护在 `docs/ui/shared/settings-theme.css`，沿用正式 `workbench.css` 色值。
-- 两个离线模板共用一份主题快照；正式主题变化时同步该快照与相关用例。
-- 模板下拉、开关和设置行悬停共用 `settings-controls.css`；reveal、菜单定位和键盘操作
+- 两个选项卡共用一份主题快照；正式主题变化时同步该快照与相关用例。
+- 两个选项卡的下拉、开关和设置行悬停共用 `settings-controls.css`；reveal、菜单定位和键盘操作
   共用 `settings-controls.js`。本次只合并模板，正式页面与执行流程尚未接入这些资源。
 - 设置行左侧为标签或标签加说明，右侧为控件；同类控件右边缘对齐。
 - 设置项名称与分组标题使用主文字色 `--text`，保证清晰度；辅助说明才使用 `--muted`。

@@ -3,7 +3,8 @@
 
     const unit = 26;
     const names = {chest: "双箱", single: "小箱子",
-        barrel: "木桶", slab: "下半砖", stairs: "楼梯", checker: "紫黑方块", glass: "玻璃", low: "低矮构件"};
+        barrel: "木桶", slab: "下半砖", stairs: "楼梯", checker: "黑紫块",
+        glass: "玻璃", quartz: "石英块", low: "低矮构件"};
     const directions = {ArrowLeft: [-1, 0], ArrowRight: [1, 0],
         ArrowUp: [0, -1], ArrowDown: [0, 1]};
     const hint = "从侧栏拖到空格放置，点选方块可删除。右键楼梯旋转，右键双箱拆分。";
@@ -205,9 +206,8 @@
             cursor.setAttribute("y", cellY * unit);
         }
 
-        for (const [kind, label] of Object.entries({
-            single: "箱子", barrel: "木桶", slab: "下半砖", stairs: "楼梯"
-        })) {
+        for (const kind of ["single", "barrel", "slab", "stairs", "glass", "checker", "quartz"]) {
+            const label = kind === "single" ? "箱子" : names[kind];
             const button = document.createElement("button");
             button.type = "button";
             button.dataset.block = kind;

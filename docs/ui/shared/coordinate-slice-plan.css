@@ -1,5 +1,5 @@
 .classic-slice {
-    --glass-edge: var(--accent);
+    --glass-edge: #8995a2;
     margin: 0;
     overflow: hidden;
     border: 1px solid var(--line);
@@ -8,6 +8,10 @@
     background-color: var(--bg);
     background-image: radial-gradient(var(--line) 0.8px, transparent 1px);
     background-size: 16px 16px;
+}
+
+:root[data-theme="gray"] .classic-slice {
+    --glass-edge: #b8c2cd;
 }
 
 .classic-slice figcaption {
@@ -47,13 +51,14 @@
     outline: none;
 }
 
+.classic-board [data-kind="glass"] { --piece-focus: var(--text); }
 .classic-board [aria-disabled="true"] { cursor: default; }
 .classic-board .moving { opacity: .8; }
 .classic-board .piece-hit { fill: transparent; }
 
 .classic-board [data-selected] .piece-hit,
 .classic-board [data-piece]:focus-visible .piece-hit {
-    stroke: var(--accent-strong);
+    stroke: var(--piece-focus, var(--accent-strong));
     stroke-width: 2px;
 }
 

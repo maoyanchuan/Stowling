@@ -331,13 +331,17 @@ def test_split_builtin_double_survives_apply_save_and_reload_selection(scan_page
 
 
 @pytest.mark.parametrize(
-    ("label", "kind"), [("木桶", "barrel"), ("下半砖", "slab"), ("楼梯", "stairs")],
+    ("label", "kind"),
+    [("木桶", "barrel"), ("下半砖", "slab"), ("楼梯", "stairs"),
+     ("玻璃", "glass"), ("黑紫块", "checker"), ("石英块", "quartz")],
 )
 def test_palette_places_selected_block_at_clicked_cell(
     scan_page: Any, label: str, kind: str,
 ) -> None:
     page = scan_page
     page.locator('[data-coordinate-id="scanned-zone-demo"]').click()
+    blocks = page.locator(f'.classic-board [data-kind="{kind}"]')
+    initial = blocks.count()
     page.get_by_role("button", name=label, exact=True).click()
     grid = page.locator(".classic-grid")
     grid.scroll_into_view_if_needed()
@@ -348,7 +352,7 @@ def test_palette_places_selected_block_at_clicked_cell(
     placed = page.locator(f'[data-kind="{kind}"][transform="translate(156 104)"]')
     assert placed.count() == 1
     placed.click()
-    assert page.locator(f'[data-kind="{kind}"]').count() == 1
+    assert blocks.count() == initial + 1
     page.locator(".classic-undo").click()
     assert placed.count() == 0
 

@@ -36,11 +36,6 @@
             <stop stop-color="#dfab58"/>
             <stop offset="1" stop-color="#aa6c31"/>
         </linearGradient>
-        <linearGradient id="pane" x2="1" y2="1">
-            <stop stop-color="#8dbdbe" stop-opacity=".36"/>
-            <stop offset=".55" stop-color="#67a3a9" stop-opacity=".12"/>
-            <stop offset="1" stop-color="#bce3e0" stop-opacity=".30"/>
-        </linearGradient>
         <g id="chest" shape-rendering="crispEdges">
             <path fill="#34291e" d="M0 1h48v23H0z"/>
             <path fill="url(#wood)" d="M2 3h44v18H2z"/>
@@ -84,9 +79,19 @@
             <path fill="#e67ee4" d="M1 1h12v2H1zM13 13h12v2H13z"/>
         </g>
         <g id="glass">
-            <rect x="1" y="1" width="24" height="24" fill="url(#pane)"
-                  stroke="var(--glass-edge)" stroke-width="2"/>
-            <path stroke="#d9f3ed" opacity=".72" d="m4 10 5-5m10 16 3-3"/>
+            <rect x=".75" y=".75" width="24.5" height="24.5" fill="#a8bfd3"
+                  fill-opacity=".12" stroke="var(--glass-edge)" stroke-width="1"/>
+            <path d="M2 20V2h18M6 12l6-6m3 15 6-6" fill="none"
+                  stroke="#f3f7fc" stroke-width="1.5"/>
+            <path d="m5 12 6-6m6 10 3-3" fill="none"
+                  stroke="var(--glass-edge)" stroke-opacity=".56"/>
+        </g>
+        <g id="quartz" shape-rendering="crispEdges">
+            <path fill="#a59e91" d="M0 0h26v26H0z"/>
+            <path fill="#e7e2d7" d="M1 1h24v24H1z"/>
+            <path fill="#f8f5ed" d="M1 1h24v2H3v20H1z"/>
+            <path fill="#d2ccbf" d="M3 23h20V4h2v21H3zM5 8h5v1H5zM16 17h4v1h-4z"/>
+            <path fill="#f2eee4" d="M8 11h7v1H8zM6 18h3v1H6z"/>
         </g>
         <g id="low" shape-rendering="crispEdges">
             <path fill="#543a2c" d="M0 0h24v13H0z"/>

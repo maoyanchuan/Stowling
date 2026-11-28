@@ -100,7 +100,13 @@ def test_runnable_template_places_experiments_last_with_an_independent_disclosur
     assert "sample-experiments-detail" in page.parents["sample-experiment-option"]
     assert page.attrs["sample-experiments-expand"]["aria-expanded"] == "false"
     assert page.attrs["sample-experiments-expand"]["aria-controls"] == "sample-experiments-detail"
-    assert "hidden" in page.attrs["sample-experiments"]
-    assert "inert" in page.attrs["sample-experiments"]
+    assert "template-saved-list" in page.parents["sample-experiments"]
+    assert "hidden" not in page.attrs["sample-experiments"]
+    assert "inert" not in page.attrs["sample-experiments"]
     assert "hidden" in page.attrs["sample-experiments-detail"]
+    assert "hidden" not in page.attrs["sample-experiment-option-row"]
+    assert "inert" not in page.attrs["sample-experiment-option-row"]
+    assert "disabled" in page.attrs["sample-experiment-option"]
+    assert "checked" not in page.attrs["sample-experiment-option"]
+    assert "hidden" in page.attrs["sample-experiment-active"]
     assert "sample-experiments" not in page.parents["sample-enabled"]

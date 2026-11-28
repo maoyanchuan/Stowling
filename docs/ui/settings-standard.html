@@ -2676,7 +2676,7 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
                 <input id="sample-maximum" class="sample-number"
                     type="number" min="1" max="99999" step="1" value="320">
             </div>
-            <section id="sample-experiments" aria-label="实验性设置" hidden inert>
+            <section id="sample-experiments" aria-label="实验性设置">
                 <button id="sample-experiments-expand" type="button"
                     class="sample-row sample-experiments-toggle cursor-interaction"
                     aria-expanded="false" aria-controls="sample-experiments-detail">
@@ -2695,9 +2695,9 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
                 <div id="sample-experiments-detail" class="sample-detail" hidden>
                     <div class="sample-detail-inner">
                         <p id="sample-experiments-hint" class="sample-description">
-                            开启页面调试模式后可编辑，收起菜单或隐藏入口会保留保存值。
+                            请先开启右上角调试模式；关闭时仅可查看，已有选项值会保留。
                         </p>
-                        <div id="sample-experiment-option-row" class="sample-row" hidden inert>
+                        <div id="sample-experiment-option-row" class="sample-row">
                             <div class="sample-setting-copy">
                                 <label class="sample-debug-title" for="sample-experiment-option">
                                     <span>实验性选项示例</span>
@@ -2708,7 +2708,9 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
                                 </p>
                             </div>
                             <input id="sample-experiment-option" class="sample-switch cursor-interaction"
-                                   type="checkbox" role="switch" aria-describedby="sample-experiment-option-description"
+                                   type="checkbox" role="switch"
+                                   aria-describedby="sample-experiment-option-description
+                                                     sample-experiments-hint"
                                    disabled>
                         </div>
                     </div>
@@ -2716,6 +2718,9 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
             </section>
             </div>
         </div>
+        <p id="sample-experiment-active" class="sample-experiment-active" role="status" hidden>
+            已启用：experimental-example（实验性选项示例）
+        </p>
     </section>
             </div>
             <p id="template-task-feedback" class="template-feedback" role="status" hidden></p>
@@ -3526,16 +3531,11 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
     function renderUI(animate = false) {
         renderRunState();
         root.querySelector("#sample-debug-mode").checked = ui.debugMode;
-        const batchingRow = root.querySelector("#sample-experiment-option-row");
-        batchingRow.hidden = !ui.debugMode;
-        batchingRow.inert = !ui.debugMode;
         const experimentOption = root.querySelector("#sample-experiment-option");
         experimentOption.checked = ui.experimentalExampleEnabled;
         experimentOption.disabled = !ui.debugMode;
-        const experimentsRoot = root.querySelector("#sample-experiments");
-        experimentsRoot.hidden = !ui.debugMode;
-        experimentsRoot.inert = !ui.debugMode;
-        const experimentsExpanded = ui.debugMode && ui.experimentsExpanded;
+        root.querySelector("#sample-experiment-active").hidden = !ui.experimentalExampleEnabled;
+        const experimentsExpanded = ui.experimentsExpanded;
         const experiments = root.querySelector("#sample-experiments-expand");
         experiments.setAttribute("aria-expanded", String(experimentsExpanded));
         experiments.setAttribute("aria-label",
@@ -3543,7 +3543,9 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
         experiments.title = ui.experimentalExampleEnabled ? "实验性选项示例（experimental-example）" : "";
         root.querySelector("#sample-experiments-summary").textContent = ui.experimentalExampleEnabled
             ? "已开启 1 项" : "未启用实验性设置";
-        root.querySelector("#sample-experiments-hint").hidden = ui.debugMode;
+        root.querySelector("#sample-experiments-hint").textContent = ui.debugMode
+            ? "调试模式已开启，可以编辑实验选项；关闭后保留已有选项值。"
+            : "请先开启右上角调试模式；关闭时仅可查看，已有选项值会保留。";
         reveal(root.querySelector("#sample-experiments-detail"), experimentsExpanded, animate);
 
         collapse.setAttribute("aria-expanded", String(ui.expanded));
@@ -3616,7 +3618,6 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
     }
 
     root.querySelector("#sample-experiments-expand").addEventListener("click", () => {
-        if (!ui.debugMode) return;
         ui.experimentsExpanded = !ui.experimentsExpanded;
         renderUI(true);
         remember();
@@ -3625,6 +3626,10 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
     for (const [id, key] of [["sample-debug-mode", "debugMode"],
         ["sample-experiment-option", "experimentalExampleEnabled"]]) {
         root.querySelector(`#${id}`).addEventListener("change", (event) => {
+            if (key === "experimentalExampleEnabled" && !ui.debugMode) {
+                renderUI();
+                return;
+            }
             ui[key] = event.target.checked;
             renderUI();
             remember();

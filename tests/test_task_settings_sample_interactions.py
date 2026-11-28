@@ -299,31 +299,61 @@ def test_experiments_menu_collapses_without_changing_saved_switch_or_run_state()
 
 
 
-def test_experiments_display_preference_hides_the_whole_menu_and_keeps_execution_values() -> None:
+def test_experiments_can_be_viewed_without_debug_but_only_edited_with_debug() -> None:
     result = run_sample("""(async () => {
         load();
-        const initialHidden = node('experiments').hidden;
-        const initialInert = node('experiments').inert;
-        node('experiments-expand').emit('click');
-        const stayedClosed = node('experiments-detail').hidden;
-        node('debug-mode').checked = true;
-        node('debug-mode').emit('change');
-        const shown = !node('experiments').hidden;
+        const initiallyVisible = !node('experiments').hidden && !node('experiments').inert;
+        const initiallyDisabled = node('experiment-option').disabled;
         node('experiments-expand').emit('click');
         animations.at(-1).finish();
         await Promise.resolve();
+        const openedWithoutDebug = !node('experiments-detail').hidden;
+        node('experiment-option').checked = true;
+        node('experiment-option').emit('change');
+        const blockedWithoutDebug = !node('experiment-option').checked;
+        node('debug-mode').checked = true;
+        node('debug-mode').emit('change');
+        const editable = !node('experiment-option').disabled;
         node('experiment-option').checked = true;
         node('experiment-option').emit('change');
         node('debug-mode').checked = false;
         node('debug-mode').emit('change');
-        const hiddenAgain = node('experiments').hidden && node('experiments').inert;
-        const preserved = node('experiment-option').checked;
+        return {initiallyVisible, initiallyDisabled, openedWithoutDebug, blockedWithoutDebug,
+            editable, preserved:node('experiment-option').checked,
+            disabledAgain:node('experiment-option').disabled,
+            stillOpen:!node('experiments-detail').hidden,
+            active:!node('experiment-active').hidden, running:node('enabled').checked};
+    })()""")
+    assert result == {
+        "initiallyVisible": True, "initiallyDisabled": True, "openedWithoutDebug": True,
+        "blockedWithoutDebug": True, "editable": True, "preserved": True,
+        "disabledAgain": True, "stillOpen": True, "active": True, "running": False,
+    }
+
+
+def test_saved_experiment_stays_locked_and_visible_after_debug_is_disabled_and_reloaded() -> None:
+    result = run_sample("""(() => {
+        reduced = true;
+        load();
+        node('experiments-expand').emit('click');
         node('debug-mode').checked = true;
         node('debug-mode').emit('change');
-        return {initialHidden, initialInert, stayedClosed, shown, hiddenAgain, preserved,
-            shownAgain:!node('experiments').hidden, reopened:!node('experiments-detail').hidden,
-            running:node('enabled').checked};
+        node('experiment-option').checked = true;
+        node('experiment-option').emit('change');
+        node('debug-mode').checked = false;
+        node('debug-mode').emit('change');
+        node('experiment-option').checked = false;
+        node('experiment-option').emit('change');
+        load();
+        const stored = JSON.parse(saved.get('stowling.task-settings-sample.state')).ui;
+        node('collapse').emit('click');
+        return {debug:node('debug-mode').checked, enabled:node('experiment-option').checked,
+            disabled:node('experiment-option').disabled,
+            expanded:node('experiments-expand').attributes['aria-expanded'],
+            savedEnabled:stored.experimentalExampleEnabled,
+            active:!node('experiment-active').hidden, running:node('enabled').checked};
     })()""")
-    assert result == {"initialHidden": True, "initialInert": True, "stayedClosed": True,
-                      "shown": True, "hiddenAgain": True, "preserved": True,
-                      "shownAgain": True, "reopened": True, "running": False}
+    assert result == {
+        "debug": False, "enabled": True, "disabled": True, "expanded": "true",
+        "savedEnabled": True, "active": True, "running": False,
+    }

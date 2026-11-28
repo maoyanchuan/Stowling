@@ -256,3 +256,34 @@ def test_preview_details_and_log_actions_handle_empty_states(template_page: Any)
     page.locator("#sample-enabled").uncheck()
     assert page.locator("#template-queue-count").inner_text() == "0"
     assert page.locator("#template-queue-list").inner_text() == "暂无运行任务"
+
+
+def test_selling_experiment_requires_debug_to_edit_but_allows_reading(template_page: Any) -> None:
+    page = template_page
+    menu = page.locator("#sample-experiments")
+    expand = page.locator("#sample-experiments-expand")
+    option = page.locator("#sample-experiment-option")
+    debug = page.locator("#sample-debug-mode")
+    assert menu.is_visible()
+    assert expand.get_attribute("aria-expanded") == "false"
+    expand.click()
+    assert page.locator("#sample-experiment-option-row").is_visible()
+    assert option.is_disabled()
+    page.locator('label[for="sample-experiment-option"]').click()
+    assert not option.is_checked()
+    debug.check()
+    assert option.is_enabled()
+    option.check()
+    debug.uncheck()
+    assert option.is_disabled()
+    assert option.is_checked()
+    assert expand.get_attribute("aria-expanded") == "true"
+    page.locator("#sample-collapse").click()
+    active = page.locator("#sample-experiment-active")
+    assert active.is_visible()
+    assert "experimental-example" in active.inner_text()
+    page.reload()
+    assert not debug.is_checked()
+    assert option.is_disabled()
+    assert option.is_checked()
+    assert active.is_visible()

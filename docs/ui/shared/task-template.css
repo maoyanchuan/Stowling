@@ -331,6 +331,13 @@
     line-height: 1.4;
     white-space: nowrap;
 }
-#stowling-settings-standard #sample-experiment-option-row[hidden] {
-    display: none !important;
+#stowling-settings-standard #sample-experiment-option:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+}
+#stowling-settings-standard .sample-experiment-active {
+    margin: 0 var(--sample-padding) 14px;
+    color: var(--muted);
+    font-size: 12px;
+    overflow-wrap: anywhere;
 }

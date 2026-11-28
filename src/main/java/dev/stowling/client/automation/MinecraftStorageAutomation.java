@@ -681,12 +681,11 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         }
 
         Session(TaskExecutionContext context, Map<BlockPosition, CacheSnapshot> cacheSnapshots,
-                boolean continuousAccess) {
+                boolean reuseContainers) {
             this.context = context;
             this.configuration = taskStorage(context);
             this.cacheSnapshots = cacheSnapshots;
-            containerSession = continuousAccess
-                    && context.workspace().continuousContainerAccessEnabled()
+            containerSession = reuseContainers && context.workspace().classificationTask()
                     ? new MinecraftStorageSession(minecraft) : null;
         }
 
@@ -2190,7 +2189,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         }
 
         private void prepareRound() {
-            if (!directBatchAttempted && context.workspace().continuousContainerAccessEnabled()) {
+            if (!directBatchAttempted && context.workspace().classificationTask()) {
                 directBatchAttempted = true;
                 if (prepareDirectLooseBatch()) return;
             }

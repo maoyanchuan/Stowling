@@ -86,7 +86,6 @@
         warehouseEnabled: document.querySelector("#robot-warehouse-enabled"),
         warehouse: document.querySelector("#robot-warehouse-location"),
         warehouseMixed: document.querySelector("#robot-warehouse-mixed-boxes"),
-        continuousAccess: document.querySelector("#auto-continuous-container-access"),
         experimentsRoot: document.querySelector("#auto-experiments-settings"),
         experimentsHeader: document.querySelector("#auto-experiments-toggle"),
         experimentsBody: document.querySelector("#auto-experiments-body"),
@@ -250,7 +249,6 @@
         elements.cacheMode.value = draft.cachePolicy.mode;
         elements.cacheThreshold.value = draft.cachePolicy.thresholdPercent;
         elements.cacheEnabled.checked = draft.cachePolicy.enabled;
-        elements.continuousAccess.checked = draft.continuousContainerAccessEnabled === true;
         populateSelect(elements.point, state.resources.coordinates, draft.coordinateId,
             "请选择坐标页面的检测点");
         Picker.group(elements.point, "coordinate");
@@ -319,8 +317,6 @@
             overflowEnabled: kind !== "PICKUP" && elements.warehouseEnabled.checked,
             overflowDestinationRef: elements.warehouse.value,
             robotWarehouseMixedBoxes: elements.warehouseMixed.checked,
-            continuousContainerAccessEnabled: kind === "CLASSIFICATION"
-                && elements.continuousAccess.checked,
             remainderPolicy: {
                 ...(remainderSettings?.read() || state.draft.remainderPolicy),
                 overflowPackingEnabled: elements.overflowPacking.checked
@@ -384,9 +380,7 @@
                 body.append(elements.form);
             }
             const header = Stowling.element("div", "task-card-header");
-            const experiment = Stowling.element("p", "auto-config-note");
-            experiment.hidden = true;
-            const row = {button, body, status, experiment};
+            const row = {button, body, status};
             if (standard) {
                 header.className = "pickup-task-header";
                 const title = Stowling.element("h3", "pickup-task-title", item.name);
@@ -415,7 +409,6 @@
             });
             header.append(row.listening);
             card.append(header, body);
-            if (classification) card.append(experiment);
             if (standard) card.append(status);
             elements.list.append(card);
             rows.set(item.id, row);
@@ -466,11 +459,8 @@
         const packing = elements.cacheEnabled.closest("section");
         packing.hidden = classification;
         packing.inert = classification;
-        elements.experimentsRoot.hidden = !showExperiments;
-        elements.experimentsRoot.inert = !showExperiments;
-        const continuousRow = elements.continuousAccess.closest("label");
-        continuousRow.hidden = !classification;
-        continuousRow.inert = !classification;
+        elements.experimentsRoot.hidden = classification || !showExperiments;
+        elements.experimentsRoot.inert = classification || !showExperiments;
         const overflowPackingRow = elements.overflowPacking.closest("label");
         overflowPackingRow.hidden = !classification;
         overflowPackingRow.inert = !classification;
@@ -543,10 +533,6 @@
                     ? "修改保存后可开始任务" : `${action}任务`;
             }
             void window.StowlingSettings.reveal(row.body, expanded);
-            row.experiment.textContent = (selected && elements.continuousAccess.checked
-                && classification) || (!selected && item.continuousContainerAccessEnabled)
-                ? "生效：扫描与存取连续访问（classification-continuous-container-access）" : "";
-            row.experiment.hidden = !row.experiment.textContent;
             row.status.textContent = pending ? "正在切换任务状态"
                 : active ? classification ? "排队或运行中" : "监听中"
                     : selected && state.dirty ? "未保存修改" : "已保存";
@@ -594,9 +580,6 @@
         const activeExperiments = [];
         if (!classification && elements.cacheEnabled.checked) {
             activeExperiments.push("打包缓存（cachePolicy.enabled）");
-        }
-        if (classification && elements.continuousAccess.checked) {
-            activeExperiments.push("扫描与存取连续访问（classification-continuous-container-access）");
         }
         elements.experimentsSummary.textContent = activeExperiments.length
             ? `已开启 ${activeExperiments.length} 项` : "未启用实验性设置";
@@ -647,7 +630,8 @@
      */
     function phaseEnabled(phase) {
         if (phase === "experiments") {
-            return window.StowlingTaskDebugMode?.enabled() === true;
+            return state.draft.kind !== "CLASSIFICATION"
+                && window.StowlingTaskDebugMode?.enabled() === true;
         }
         if (phase === "pickup") return elements.collectEnabled.checked;
         if (phase === "packing") return elements.cacheEnabled.checked;

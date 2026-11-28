@@ -20,19 +20,13 @@ class ClassificationVisitPolicyTest {
     private static final ContainerTarget OTHER = target(12);
 
     @Test
-    void continuousAccessRequiresItsOwnSwitchAndNeverLeaksToOtherTasksOrRuns() {
-        for (boolean classification : List.of(false, true)) {
-            for (boolean enabled : List.of(false, true)) {
-                var workspace = workspace(classification);
-                assertFalse(workspace.continuousContainerAccessEnabled());
-                workspace.configureContinuousContainerAccess(enabled);
-                assertEquals(classification && enabled,
-                        workspace.continuousContainerAccessEnabled());
-                assertFalse(workspace(classification).continuousContainerAccessEnabled());
-                workspace.configureContinuousContainerAccess(false);
-                assertFalse(workspace.continuousContainerAccessEnabled());
-            }
-        }
+    void classificationBaselineIsScopedToTheRunWithoutAnExecutionSwitch() {
+        var classification = workspace(true);
+        var ordinary = workspace(false);
+        assertTrue(classification.classificationTask());
+        assertFalse(ordinary.classificationTask());
+        assertFalse(new TaskRunWorkspace().classificationTask());
+        assertTrue(workspace(true).classificationTask());
     }
 
     @Test

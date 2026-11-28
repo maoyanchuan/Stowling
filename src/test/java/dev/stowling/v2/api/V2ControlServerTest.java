@@ -47,7 +47,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 class V2ControlServerTest {
     @Test
-    void savesDedicatedZoneAndTaskExperimentThroughAuthenticatedApi() throws Exception {
+    void savesMergedClassificationBaselineThroughAuthenticatedApi() throws Exception {
         Path file = directory.resolve("unstackable-zone.json");
         var store = new ConfigStore(file);
         var source = new RegionDefinition(UUID.randomUUID(), "Source", 100, 64, 0, 101, 64, 0);
@@ -75,7 +75,6 @@ class V2ControlServerTest {
             var task = new JsonObject();
             task.addProperty("name", "Equipment sorting");
             task.addProperty("kind", "CLASSIFICATION");
-            task.addProperty("continuousContainerAccessEnabled", true);
             task.addProperty("cacheLocationRef", "region:" + source.id());
             task.addProperty("collectionPriority", "NORMAL");
             task.add("classificationAreas", JsonParser.parseString(
@@ -88,7 +87,7 @@ class V2ControlServerTest {
             var item = object(saved).getAsJsonObject("item");
             assertFalse(item.has("unstackableZoneRoutingEnabled"));
             assertFalse(item.has("foodPauseResumeEnabled"));
-            assertTrue(item.get("continuousContainerAccessEnabled").getAsBoolean());
+            assertFalse(item.has("continuousContainerAccessEnabled"));
             var patch = new JsonObject();
             patch.add("revision", object(saved).get("revision"));
             patch.addProperty("name", "Renamed classification");
@@ -97,11 +96,13 @@ class V2ControlServerTest {
             String taskPath = "/v1/auto-classify-tasks/" + item.get("id").getAsString();
             var updated = fixture.send(taskPath, "PUT", patch.toString(), true);
             assertEquals(200, updated.statusCode());
-            assertTrue(object(updated).getAsJsonObject("item")
-                    .get("continuousContainerAccessEnabled").getAsBoolean());
-            task.addProperty("continuousContainerAccessEnabled", "true");
-            assertEquals(400, fixture.send("/v1/auto-classify-tasks", "POST",
-                    task.toString(), true).statusCode());
+            assertFalse(object(updated).getAsJsonObject("item")
+                    .has("continuousContainerAccessEnabled"));
+            for (boolean retired : List.of(false, true)) {
+                task.addProperty("continuousContainerAccessEnabled", retired);
+                assertEquals(400, fixture.send("/v1/auto-classify-tasks", "POST",
+                        task.toString(), true).statusCode());
+            }
             assertTrue(new ConfigStore(file).read().config().tasks().stream()
                     .flatMap(definition -> definition.steps().stream()).anyMatch(step ->
                             "ROUTE_UNSTACKABLE_ZONE_REMAINDERS".equals(step.moduleId())));

@@ -41,28 +41,27 @@ class ConfigStoreTest {
     Path directory;
 
     @Test
-    void continuousAccessDefaultsOffAndSurvivesSaveReloadAndNormalization() throws Exception {
-        for (boolean enabled : List.of(false, true)) {
+    void continuousAccessLegacyValuesMigrateToOneBaselineWithoutResavingTheSwitch()
+            throws Exception {
+        for (String legacy : List.of("true", "false", "null", "missing", "\"retired\"")) {
             var json = new Gson().toJsonTree(overflowPackingConfiguration(true, false))
                     .getAsJsonObject();
             var definition = json.getAsJsonArray("autoClassifyTasks").get(0).getAsJsonObject();
-            definition.addProperty("continuousContainerAccessEnabled", enabled);
-            var path = directory.resolve("continuous-" + enabled + ".json");
+            if (!legacy.equals("missing")) {
+                definition.add("continuousContainerAccessEnabled", JsonParser.parseString(legacy));
+            }
+            var path = directory.resolve("continuous-" + legacy.hashCode() + ".json");
             Files.writeString(path, json.toString());
             var store = new ConfigStore(path);
             var loaded = store.read();
-            assertEquals(enabled, loaded.config().autoClassifyTasks().getFirst()
-                    .continuousContainerAccessEnabled());
+            var restored = loaded.config().autoClassifyTasks().getFirst();
+            assertEquals(AutoClassifyDefinition.Kind.CLASSIFICATION, restored.kind());
+            assertFalse(new Gson().toJsonTree(restored).getAsJsonObject()
+                    .has("continuousContainerAccessEnabled"));
             store.save(loaded.revision(), loaded.config());
-            assertEquals(enabled, new ConfigStore(path).read().config().autoClassifyTasks()
-                    .getFirst().continuousContainerAccessEnabled());
-            definition.remove("continuousContainerAccessEnabled");
-            Files.writeString(path, json.toString());
-            assertFalse(new ConfigStore(path).read().config().autoClassifyTasks().getFirst()
-                    .continuousContainerAccessEnabled());
-            definition.addProperty("continuousContainerAccessEnabled", "true");
-            Files.writeString(path, json.toString());
-            assertThrows(V2ValidationException.class, () -> new ConfigStore(path).read());
+            var reopened = new ConfigStore(path).read();
+            assertEquals(loaded.config(), reopened.config());
+            assertFalse(Files.readString(path).contains("continuousContainerAccessEnabled"));
         }
     }
 

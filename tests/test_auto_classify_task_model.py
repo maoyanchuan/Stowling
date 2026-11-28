@@ -1021,8 +1021,10 @@ def test_retired_classification_fields_are_not_sent_or_restored(legacy_value: bo
 
 
 @pytest.mark.parametrize("kind", ["CLASSIFICATION", "PICKUP", "COMBINED"])
-@pytest.mark.parametrize("enabled", [False, True])
-def test_continuous_access_round_trips_only_for_classification(kind: str, enabled: bool) -> None:
+@pytest.mark.parametrize("legacy", [False, True, None])
+def test_merged_continuous_access_is_removed_from_drafts_and_payloads(
+    kind: str, legacy: bool | None,
+) -> None:
     result = _run("""(() => {
         const model = window.StowlingAutoClassifyTaskModel;
         const draft = model.draftFromTask({kind: KIND, cacheLocationRef: "region:source",
@@ -1030,11 +1032,11 @@ def test_continuous_access_round_trips_only_for_classification(kind: str, enable
             collectionEnabled: KIND !== "CLASSIFICATION", classificationEnabled: KIND !== "PICKUP",
             collectionPriority: "NORMAL",
             classificationAreas: [{categoryZoneRef: "category-zone:zone"}],
-            continuousContainerAccessEnabled: ENABLED});
-        const saved = model.payload(draft, {coordinates: [{id: "point"}],
-            regions: [{id: "source"}], categoryZones: [{id: "zone"}]});
-        return [model.newDraft(KIND).continuousContainerAccessEnabled,
-            draft.continuousContainerAccessEnabled, saved.continuousContainerAccessEnabled];
-    })()""".replace("KIND", json.dumps(kind)).replace("ENABLED", json.dumps(enabled)))
-    expected = kind == "CLASSIFICATION" and enabled
-    assert result == [False, expected, expected]
+            continuousContainerAccessEnabled: LEGACY});
+        const saved = model.payload({...draft, continuousContainerAccessEnabled: LEGACY},
+            {coordinates: [{id: "point"}], regions: [{id: "source"}],
+                categoryZones: [{id: "zone"}]});
+        return [model.newDraft(KIND), draft, saved].map(value =>
+            Object.hasOwn(value, "continuousContainerAccessEnabled"));
+    })()""".replace("KIND", json.dumps(kind)).replace("LEGACY", json.dumps(legacy)))
+    assert result == [False, False, False]

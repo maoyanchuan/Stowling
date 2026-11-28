@@ -4,7 +4,7 @@ import dev.stowling.automation.ContainerTarget;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 
-/** Owns only menus opened by one opted-in storage subflow. */
+/** Owns only menus opened by one independent classification storage subflow. */
 final class MinecraftStorageSession {
     private final Access access;
     private final MinecraftContainerOpenHand hand;

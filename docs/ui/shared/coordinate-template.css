@@ -2,6 +2,29 @@
     --radius: 18px;
 }
 
+@media (min-width: 761px) {
+    body[data-active-template="coordinates"] {
+        display: flex;
+        flex-direction: column;
+    }
+
+    body[data-active-template="coordinates"] .page-main {
+        display: flex;
+        flex: 1;
+        flex-direction: column;
+    }
+
+    body[data-active-template="coordinates"] #template-coordinates-panel {
+        display: flex;
+        flex: 1;
+    }
+
+    body[data-active-template="coordinates"] .coordinate-shell {
+        flex: 1;
+        min-width: 0;
+    }
+}
+
 :where(#template-coordinates-panel) .coordinate-shell {
     display: grid;
     grid-template-columns: minmax(230px, 290px) minmax(0, 1fr);
@@ -405,7 +428,7 @@
 }
 
 :where(#template-coordinates-panel) .editor-form {
-    max-width: 720px;
+    width: 100%;
 }
 
 :where(#template-coordinates-panel) .editor-fields {

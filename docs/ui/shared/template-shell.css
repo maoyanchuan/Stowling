@@ -12,10 +12,6 @@ body {
     line-height: 1.5;
 }
 
-#template-coordinates-panel {
-    max-width: 1220px;
-}
-
 [hidden] {
     display: none !important;
 }

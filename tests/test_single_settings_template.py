@@ -311,3 +311,42 @@ def test_maximum_sale_suboption_uses_shared_indent_and_keeps_controls_aligned(
     assert parent is not None and child is not None
     assert child["x"] - parent["x"] == pytest.approx(indent)
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+
+
+@pytest.mark.parametrize("theme", ["green", "gray"])
+@pytest.mark.parametrize("width", [390, 1440, 1920])
+def test_coordinate_content_fills_available_page_width_and_desktop_height(
+    template_page: Any, theme: str, width: int,
+) -> None:
+    page = template_page
+    page.set_viewport_size({"width": width, "height": 1400})
+    page.get_by_role("tab", name="坐标", exact=True).click()
+    if page.locator("html").get_attribute("data-theme") != theme:
+        page.locator("#template-theme-toggle").click()
+    page.locator("#add-coordinate").click()
+    page.locator("#coordinate-kind-trigger").click()
+    page.locator("#coordinate-kind-menu").get_by_role("option").filter(has_text="坐标点").click()
+    main = page.locator(".page-main").bounding_box()
+    panel = page.locator("#template-coordinates-panel").bounding_box()
+    shell = page.locator(".coordinate-shell").bounding_box()
+    assert main is not None and panel is not None and shell is not None
+    assert panel["x"] == pytest.approx(main["x"])
+    assert panel["width"] == pytest.approx(main["width"])
+    assert shell["width"] == pytest.approx(panel["width"])
+    assert page.locator("#coordinate-form").evaluate("""form => {
+        const editor = form.closest('.coordinate-editor');
+        const padding = getComputedStyle(editor);
+        const available = editor.clientWidth - parseFloat(padding.paddingLeft)
+            - parseFloat(padding.paddingRight);
+        return Math.abs(form.getBoundingClientRect().width - available) <= 1;
+    }""")
+    library = page.locator(".coordinate-library").bounding_box()
+    editor = page.locator(".coordinate-editor").bounding_box()
+    assert library is not None and editor is not None
+    if width > 760:
+        assert shell["y"] + shell["height"] == pytest.approx(1400 - 48, abs=1)
+        assert library["y"] + library["height"] == pytest.approx(editor["y"] + editor["height"])
+        assert page.locator("#coordinate-form").bounding_box()["width"] > 720
+    else:
+        assert editor["y"] >= library["y"] + library["height"]
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")

@@ -1,0 +1,163 @@
+from collections.abc import Iterator
+from pathlib import Path
+from typing import Any
+
+import pytest
+
+
+TEMPLATE = Path(__file__).resolve().parents[1] / "docs/ui/settings-standard.html"
+
+
+@pytest.fixture
+def scan_page() -> Iterator[Any]:
+    playwright = pytest.importorskip("playwright.sync_api")
+    with playwright.sync_playwright() as runtime:
+        browser = runtime.chromium.launch()
+        page = browser.new_page(viewport={"width": 1440, "height": 1100})
+        page.emulate_media(reduced_motion="reduce")
+        errors: list[str] = []
+        requests: list[str] = []
+        page.on("pageerror", lambda error: errors.append(str(error)))
+        page.on("request", lambda request: requests.append(request.url))
+        page.goto(TEMPLATE.as_uri() + "#coordinates")
+        yield page
+        assert errors == []
+        assert not any(url.startswith(("http://", "https://")) for url in requests)
+        browser.close()
+
+
+def choose_mode(page: Any, mode: str) -> None:
+    page.locator("#category-setup-trigger").click()
+    page.locator(f'#category-setup-menu [data-category-value="{mode}"]').click()
+
+
+def apply_example(page: Any) -> None:
+    choose_mode(page, "scan")
+    page.locator("#category-scan-start").click()
+    page.locator("#category-scan-apply").click()
+
+
+def test_scan_only_requires_the_total_selection_and_preserves_manual_drafts(scan_page: Any) -> None:
+    page = scan_page
+    page.locator(".category-binding-name").fill("保留的手动组")
+    choose_mode(page, "scan")
+    assert page.locator("#category-overall-first-x").is_editable()
+    assert page.locator("#category-details").is_hidden()
+    assert page.locator("#category-configuration").is_disabled()
+    assert page.locator("#save-coordinate").is_disabled()
+    assert page.locator("#category-scan-panel").is_visible()
+    assert "离线 UI 示例" in page.locator("#category-scan-panel").inner_text()
+    assert not page.locator("#category-details").evaluate("""node => {
+        node.querySelector('input').focus();
+        return node.contains(document.activeElement);
+    }""")
+    choose_mode(page, "manual")
+    assert page.locator("#category-scan-panel").is_hidden()
+    assert page.locator(".category-binding-name").input_value() == "保留的手动组"
+    assert page.locator("#save-coordinate").is_enabled()
+
+
+def test_preview_can_be_discarded_without_replacing_configuration(scan_page: Any) -> None:
+    page = scan_page
+    page.locator(".category-binding-name").fill("尚未替换")
+    choose_mode(page, "scan")
+    page.locator("#category-scan-start").click()
+    assert page.locator("#category-scan-preview").is_visible()
+    assert "尚未应用" in page.locator("#category-scan-status").inner_text()
+    assert page.locator(".category-binding-name").input_value() == "尚未替换"
+    page.locator("#category-scan-discard").click()
+    assert page.locator("#category-scan-preview").is_hidden()
+    assert page.locator("#category-scan-start").evaluate("node => node === document.activeElement")
+    choose_mode(page, "manual")
+    assert page.locator(".category-binding-name").input_value() == "尚未替换"
+
+
+def test_empty_or_changed_selection_cannot_apply_a_stale_preview(scan_page: Any) -> None:
+    page = scan_page
+    choose_mode(page, "scan")
+    page.locator("#category-overall-first-x").fill("")
+    assert page.locator("#category-scan-start").is_disabled()
+    page.locator("#category-overall-first-x").fill("40")
+    page.locator("#category-scan-start").click()
+    page.locator("#category-overall-first-x").fill("41")
+    assert page.locator("#category-scan-apply").is_disabled()
+    assert "预览已过期" in page.locator("#category-scan-status").inner_text()
+    page.locator("#category-scan-start").click()
+    assert page.locator("#category-scan-apply").is_enabled()
+    assert "41, -44, 30" in page.locator("#category-scan-range").inner_text()
+
+
+def test_applied_example_can_be_edited_saved_copied_and_reopened(scan_page: Any) -> None:
+    page = scan_page
+    apply_example(page)
+    assert page.locator("#category-scan-preview").is_hidden()
+    assert page.locator("#category-generated-toggle").is_visible()
+    assert page.locator("#category-details").is_hidden()
+    assert page.locator("#save-coordinate").is_enabled()
+    page.locator("#category-generated-toggle").click()
+    assert page.locator("#category-scope-mode").input_value() == "selection"
+    assert page.locator("#category-standing-enabled").is_checked()
+    page.locator(".category-binding-name").fill("扫描后微调")
+    page.locator("#category-generated-toggle").click()
+    page.locator("#save-coordinate").click()
+    assert "已保存分类区" in page.locator("#editor-status").inner_text()
+    page.locator("#duplicate-coordinate").click()
+    assert page.locator("#category-setup-mode").input_value() == "scan"
+    assert page.locator("#save-coordinate").is_enabled()
+    page.locator("#category-generated-toggle").click()
+    assert page.locator(".category-binding-name").input_value() == "扫描后微调"
+    page.locator("#save-coordinate").click()
+    copied_name = page.locator("#coordinate-name").input_value()
+    page.locator('[data-coordinate-id="home"]').click()
+    assert page.locator("#save-coordinate").is_enabled()
+    page.locator(".coordinate-item").filter(has_text=copied_name).click()
+    assert page.locator("#category-setup-mode").input_value() == "scan"
+    assert page.locator(".category-binding-name").input_value() == "扫描后微调"
+
+
+def test_applied_configuration_requires_rescan_after_bounds_change(scan_page: Any) -> None:
+    page = scan_page
+    apply_example(page)
+    page.locator("#category-overall-first-x").fill("42")
+    assert page.locator("#save-coordinate").is_disabled()
+    assert "已有配置待更新" in page.locator("#category-scan-status").inner_text()
+    page.locator("#category-scan-start").click()
+    page.locator("#category-scan-apply").click()
+    assert page.locator("#save-coordinate").is_enabled()
+    page.locator("#category-overall-first-x").fill("43")
+    choose_mode(page, "manual")
+    assert page.locator("#save-coordinate").is_enabled()
+
+
+def test_mode_uses_shared_keyboard_controls_and_preserves_state_across_tabs(scan_page: Any) -> None:
+    page = scan_page
+    trigger = page.locator("#category-setup-trigger")
+    trigger.focus()
+    page.keyboard.press("ArrowDown")
+    page.keyboard.press("End")
+    page.keyboard.press("Enter")
+    assert page.locator("#category-setup-mode").input_value() == "scan"
+    assert trigger.evaluate("node => node === document.activeElement")
+    page.locator("#category-scan-start").click()
+    page.get_by_role("tab", name="任务", exact=True).click()
+    page.get_by_role("tab", name="坐标", exact=True).click()
+    assert page.locator("#category-scan-preview").is_visible()
+    assert page.locator("#save-coordinate").is_disabled()
+
+
+@pytest.mark.parametrize("theme", ["green", "gray"])
+@pytest.mark.parametrize("width", [390, 1440])
+def test_scan_preview_adapts_to_both_themes_and_narrow_screens(
+    scan_page: Any, theme: str, width: int,
+) -> None:
+    page = scan_page
+    page.set_viewport_size({"width": width, "height": 1100})
+    page.evaluate("theme => document.documentElement.dataset.theme = theme", theme)
+    choose_mode(page, "scan")
+    page.locator("#category-scan-start").click()
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    for selector in ["#category-scan-start", "#category-scan-range", "#category-scan-apply"]:
+        bounds = page.locator(selector).bounding_box()
+        assert bounds is not None
+        assert bounds["x"] >= 0
+        assert bounds["x"] + bounds["width"] <= width

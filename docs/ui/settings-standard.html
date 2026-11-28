@@ -24,6 +24,7 @@
     <script src="shared/settings-controls.js"></script>
     <script src="shared/template-tabs.js" defer></script>
     <script src="shared/task-console-template.js" defer></script>
+    <script src="shared/coordinate-scan-template.js"></script>
 </head>
 <body data-active-template="task">
 <header class="page-header">
@@ -2927,6 +2928,61 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
 
                             <div id="category-zone-fields" class="coordinate-kind-fields" hidden>
                                 <div class="coordinate-region-stack">
+                                    <div id="category-setup-row" class="category-option-row">
+                                        <span class="category-option-label">配置方式
+                                            <small>手动填写，或通过总选区扫描生成。</small>
+                                        </span>
+                                        <div class="category-select-wrap"
+                                             data-category-select="setupMode">
+                                            <select id="category-setup-mode" hidden
+                                                    aria-hidden="true" tabindex="-1">
+                                                <option value="manual">手动配置</option>
+                                                <option value="scan">扫描生成</option>
+                                            </select>
+                                            <button id="category-setup-trigger" type="button"
+                                                    class="category-select-trigger" role="combobox"
+                                                    aria-label="配置方式" aria-haspopup="listbox"
+                                                    aria-expanded="false"
+                                                    aria-controls="category-setup-menu">
+                                                <span class="category-select-current">手动配置</span>
+                                                <svg aria-hidden="true" width="18" height="18"
+                                                     viewBox="0 0 24 24" fill="none"
+                                                     stroke="currentColor" stroke-width="1.8">
+                                                    <path d="m6 9 6 6 6-6"/>
+                                                </svg>
+                                            </button>
+                                            <div id="category-setup-menu" role="listbox"
+                                                 class="category-select-menu" aria-label="配置方式"
+                                                 hidden>
+                                                <button type="button" role="option" tabindex="-1"
+                                                        class="category-select-option"
+                                                        data-category-value="manual"
+                                                        aria-selected="true">
+                                                    <span>手动配置
+                                                        <small>自行设置区域与绑定</small>
+                                                    </span>
+                                                    <svg aria-hidden="true" width="18" height="18"
+                                                         viewBox="0 0 24 24" fill="none"
+                                                         stroke="currentColor" stroke-width="2">
+                                                        <path d="m5 12 4 4L19 6"/>
+                                                    </svg>
+                                                </button>
+                                                <button type="button" role="option" tabindex="-1"
+                                                        class="category-select-option"
+                                                        data-category-value="scan"
+                                                        aria-selected="false">
+                                                    <span>扫描生成
+                                                        <small>只填总选区，自动生成配置</small>
+                                                    </span>
+                                                    <svg aria-hidden="true" width="18" height="18"
+                                                         viewBox="0 0 24 24" fill="none"
+                                                         stroke="currentColor" stroke-width="2">
+                                                        <path d="m5 12 4 4L19 6"/>
+                                                    </svg>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
                                     <fieldset class="coordinate-region-card">
                                         <legend>总选区</legend>
                                         <div class="coordinate-corner-fields">
@@ -2968,6 +3024,72 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
                                             </label>
                                         </div>
                                     </fieldset>
+                                    <div id="category-scan-panel" hidden>
+                                        <div class="category-scan-content">
+                                            <div class="category-binding-heading">
+                                                <div>
+                                                    <strong>扫描总选区</strong>
+                                                    <p>框住整片分类设施，识别区与储存区由扫描生成。</p>
+                                                </div>
+                                                <button id="category-scan-start" type="button"
+                                                        class="primary">预览扫描示例</button>
+                                            </div>
+                                            <p class="category-rule-help">
+                                                当前为离线 UI 示例，不读取游戏。下方数据仅用于预览
+                                                生成与调整流程，实际识别规则待接入时确定。
+                                            </p>
+                                            <p id="category-scan-status" class="category-scan-status"
+                                               role="status" aria-live="polite"></p>
+                                            <div id="category-scan-preview" hidden>
+                                                <div class="category-scan-preview-content">
+                                                    <strong>待应用的扫描示例</strong>
+                                                    <dl class="category-scan-summary">
+                                                        <div><dt>区域与绑定</dt>
+                                                            <dd>1 组绑定 · 识别区与储存区各 1 个</dd>
+                                                        </div>
+                                                        <div><dt>基础设置</dt>
+                                                            <dd>选区模式 · 标识物 · 散货储存</dd>
+                                                        </div>
+                                                        <div><dt>站立位置</dt><dd>1 个示例站位</dd></div>
+                                                        <div><dt>总选区</dt>
+                                                            <dd id="category-scan-range"></dd>
+                                                        </div>
+                                                    </dl>
+                                                    <p class="category-rule-help">
+                                                        应用会替换当前基础设置、绑定组与站位；
+                                                        名称和总选区保持。应用前可放弃预览。
+                                                    </p>
+                                                    <div class="actions">
+                                                        <button id="category-scan-apply" type="button"
+                                                                class="primary">应用示例配置</button>
+                                                        <button id="category-scan-discard"
+                                                                type="button">放弃预览</button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <button id="category-generated-toggle" type="button"
+                                            class="category-group-trigger category-option-row"
+                                            aria-expanded="false" aria-controls="category-details"
+                                            hidden>
+                                        <span class="category-option-label">生成内容与手动调整
+                                            <small>查看或微调基础设置、绑定组和站位。</small>
+                                        </span>
+                                        <svg aria-hidden="true" width="18" height="18"
+                                             viewBox="0 0 24 24" fill="none"
+                                             stroke="currentColor" stroke-width="1.8">
+                                            <path d="m9 6 6 6-6 6"/>
+                                        </svg>
+                                    </button>
+                                    <div id="category-details">
+                                        <fieldset id="category-configuration"
+                                                  class="category-configuration"
+                                                  aria-label="分类区配置详情">
+                                            <div id="category-configuration-content"
+                                                 class="coordinate-region-stack"></div>
+                                        </fieldset>
+                                    </div>
                                     <div class="category-options">
                                         <div class="category-option-row">
                                             <span class="category-option-label">储存模式</span>
@@ -3468,7 +3590,9 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
 
                         <div class="editor-actions">
                             <div class="editor-actions-main">
-                                <button class="primary" type="submit">保存坐标</button>
+                                <button id="save-coordinate" class="primary" type="submit">
+                                    保存坐标
+                                </button>
                                 <button id="duplicate-coordinate" type="button">复制坐标</button>
                             </div>
                             <button id="delete-coordinate" class="ghost danger" type="button">
@@ -3832,7 +3956,8 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
     /** @typedef {{id: string, name: string, kind: string, folderId: string,
      * x?: number, y?: number, z?: number, radius?: number,
      * region?: CoordinateRegion, overallRegion?: CoordinateRegion,
-     * bindings?: CategoryBinding[], categoryOptions?: CategoryOptions}} Coordinate */
+     * bindings?: CategoryBinding[], categoryOptions?: CategoryOptions,
+     * scanDraft?: object}} Coordinate */
 
     const folders = [
         {id: "common", name: "常用位置", collapsed: false}
@@ -3883,6 +4008,7 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
     const animateReveal = Controls.createReveal();
     const bindingOptions = new WeakMap();
     let standingEditor = null;
+    let categoryScan = null;
     const nodes = {
         list: panel.querySelector("#coordinate-list"),
         add: panel.querySelector("#add-coordinate"),
@@ -3906,6 +4032,7 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
         pointOptions: panel.querySelector("#point-options"),
         regionFields: panel.querySelector("#region-fields"),
         categoryFields: panel.querySelector("#category-zone-fields"),
+        save: panel.querySelector("#save-coordinate"),
         categoryBindings: panel.querySelector("#category-bindings"),
         addCategoryBinding: panel.querySelector("#add-category-binding"),
         form: panel.querySelector("#coordinate-form"),
@@ -3967,18 +4094,23 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
             fields[key] = root.querySelector(`[id$="category-${key}"]`);
         }
         const selects = Array.from(root.querySelectorAll("[data-category-select]"))
-            .map(wrap => ({
-                key: wrap.dataset.categorySelect,
-                select: wrap.querySelector("select"),
-                wrap,
-                trigger: wrap.querySelector(".category-select-trigger"),
-                current: wrap.querySelector(".category-select-current"),
-                menu: wrap.querySelector(".category-select-menu"),
-                options: Array.from(wrap.querySelectorAll(".category-select-option"))
-            }));
+            .map(createCategorySelect);
         return {root, fields, selects, supportExpanded: false,
             positionsExpanded: false, bindingsExpanded: false, repeatsExpanded: false,
             recognitionExpanded: false, ruleSelects: []};
+    }
+
+    /** @param {HTMLElement} wrap @returns {CategorySelect} */
+    function createCategorySelect(wrap) {
+        return {
+            key: wrap.dataset.categorySelect,
+            select: wrap.querySelector("select"),
+            wrap,
+            trigger: wrap.querySelector(".category-select-trigger"),
+            current: wrap.querySelector(".category-select-current"),
+            menu: wrap.querySelector(".category-select-menu"),
+            options: Array.from(wrap.querySelectorAll(".category-select-option"))
+        };
     }
 
     /** @param {HTMLElement} content @param {boolean} expanded
@@ -5122,11 +5254,13 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
         setFieldGroupEnabled(nodes.pointOptions, kind === "point");
         setFieldGroupEnabled(nodes.regionFields, kind === "region");
         setFieldGroupEnabled(nodes.categoryFields, kind === "category-zone");
+        nodes.save.disabled = false;
         if (kind === "category-zone") {
             updateCategoryOptionState();
             for (const card of nodes.categoryBindings.children) {
                 updateCategoryOptionState(bindingOptions.get(card), false);
             }
+            categoryScan.load(coordinate.scanDraft);
         }
         if (kind === "point") {
             nodes.x.value = String(coordinate.x ?? 0);
@@ -5176,6 +5310,7 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
     /** @param {Coordinate} source @returns {Coordinate} */
     function cloneCoordinate(source) {
         const copy = {...source, id: nextId(), name: `${source.name} 副本`};
+        if (source.scanDraft) copy.scanDraft = structuredClone(source.scanDraft);
         if (source.region) copy.region = cloneRegion(source.region);
         if (source.overallRegion) copy.overallRegion = cloneRegion(source.overallRegion);
         if (source.categoryOptions) {
@@ -5533,6 +5668,10 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
             delete coordinate.bindings;
             delete coordinate.categoryOptions;
         } else {
+            if (!categoryScan.canSave()) {
+                setStatus("请先预览并应用当前总选区的示例配置，再保存坐标。", "error");
+                return;
+            }
             const contexts = [globalCategoryContext, ...Array.from(
                 nodes.categoryBindings.children, card => bindingOptions.get(card)
             )];
@@ -5550,6 +5689,7 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
             coordinate.overallRegion = overallRegion;
             coordinate.bindings = bindings;
             coordinate.categoryOptions = readCategoryOptions();
+            coordinate.scanDraft = categoryScan.read();
             delete coordinate.x;
             delete coordinate.y;
             delete coordinate.z;
@@ -5557,6 +5697,7 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
             delete coordinate.region;
         }
         coordinate.kind = kind;
+        if (kind !== "category-zone") delete coordinate.scanDraft;
         state.editorKind = kind;
         state.showKindPicker = false;
         coordinate.name = name;
@@ -5695,6 +5836,43 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
 
     }
 
+    categoryScan = window.StowlingCoordinateScan.create(nodes.categoryFields, {
+        reveal,
+        readRegion: () => readRegionFields(nodes.categoryOverall),
+        setSaveEnabled: enabled => { nodes.save.disabled = !enabled; },
+        closeMenus: () => {
+            if (categoryMenuOpen) setCategoryMenuOpen(categoryMenuOpen, false, false, false);
+        },
+        bindMode: (row, changed) => {
+            const control = createCategorySelect(row.querySelector(".category-select-wrap"));
+            bindCategorySelect(control, changed);
+            return () => syncCategorySelect(control);
+        },
+        applyExample: region => {
+            // Synthetic offline layout only; no world recognition or navigation is performed.
+            const first = {};
+            const second = {};
+            for (const axis of ["x", "y", "z"]) {
+                first[axis] = Math.min(region.first[axis], region.second[axis]);
+                second[axis] = Math.max(region.first[axis], region.second[axis]);
+            }
+            const binding = {
+                id: nextId(), name: "扫描绑定组（示例）", optionsEnabled: false,
+                markerRegion: {first: {...first, y: second.y}, second: {...second}},
+                storageRegion: {first: {...first}, second: {...second, y: first.y}},
+                standingPlan: {enabled: true, points: [{
+                    standingId: nextId(), position: {...first},
+                    subregionsEnabled: false, expanded: false
+                }]}
+            };
+            writeCategoryOptions({...defaultCategoryOptions(), scopeMode: "selection"});
+            renderCategoryBindings([binding]);
+            updateCategoryOptionState(globalCategoryContext, false);
+            for (const card of nodes.categoryBindings.children) {
+                updateCategoryOptionState(bindingOptions.get(card), false);
+            }
+        }
+    });
     bindCategoryOptions(globalCategoryContext);
     document.addEventListener("pointerdown", event => {
         if (kindMenuOpen && !nodes.kindWrap.contains(event.target)) setKindMenuOpen(false);

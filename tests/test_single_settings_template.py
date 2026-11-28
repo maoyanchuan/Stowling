@@ -91,10 +91,14 @@ def test_theme_and_layout_stay_shared_across_tabs(
     tab_bounds = page.get_by_role("tablist").bounding_box()
     main_bounds = page.locator(".page-main").bounding_box()
     panel_bounds = page.get_by_role("tabpanel").bounding_box()
+    header_bounds = page.locator(".page-header").bounding_box()
     assert tab_bounds is not None and main_bounds is not None and panel_bounds is not None
     assert tab_bounds["x"] == pytest.approx(main_bounds["x"])
     assert tab_bounds["width"] == pytest.approx(main_bounds["width"])
     assert tab_bounds["y"] + tab_bounds["height"] <= panel_bounds["y"]
+    assert header_bounds is not None
+    assert tab_bounds["y"] - header_bounds["y"] - header_bounds["height"] == pytest.approx(14)
+    assert panel_bounds["y"] - tab_bounds["y"] - tab_bounds["height"] == pytest.approx(32)
     if width <= 540:
         task_bounds = page.get_by_role("tab", name="任务", exact=True).bounding_box()
         coordinate_bounds = page.get_by_role("tab", name="坐标", exact=True).bounding_box()
@@ -175,25 +179,34 @@ def test_console_modules_follow_desktop_and_narrow_layout(
         assert rail["y"] == pytest.approx(workbench["y"])
     else:
         assert workbench["y"] + workbench["height"] <= rail["y"]
-    assert page.locator("#template-saved-count").inner_text() == "3"
-    assert page.locator("#template-queue-count").inner_text() == "2"
+    assert page.locator("#template-saved-count").inner_text() == "1"
+    assert page.locator("#template-queue-count").inner_text() == "0"
     assert page.locator("#template-log-count").inner_text() == "1"
-    assert page.locator(".template-task-options button").count() == 6
-    assert page.locator(".template-task-card").count() == 3
+    assert page.locator(".template-task-options button").count() == 1
+    assert page.locator("#template-saved-list > .sample-module").count() == 1
+    assert page.locator("#template-saved-list #sample-maximum").is_visible()
+    assert page.locator("#template-saved-list .sample-title").inner_text() == "售卖弹性物资"
+    assert page.locator(".template-task-options strong").inner_text() == "＋ 售卖弹性物资"
+    assert page.locator(".template-task-card, .template-component-example").count() == 0
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
 
 
 def test_preview_running_and_disclosure_states_remain_independent(template_page: Any) -> None:
     page = template_page
-    card = page.locator(".template-task-card").first
-    expand = card.locator(".sample-expand")
-    toggle = card.get_by_role("switch")
-    assert toggle.is_checked()
-    toggle.uncheck()
-    assert expand.get_attribute("aria-expanded") == "false"
+    card = page.locator("#template-saved-list > .sample-module")
+    expand = page.locator("#sample-collapse")
+    toggle = page.locator("#sample-enabled")
+    page.locator("#sample-maximum").fill("180")
+    toggle.check()
+    assert expand.get_attribute("aria-expanded") == "true"
     assert page.locator("#template-queue-count").inner_text() == "1"
     expand.click()
-    assert card.locator(".template-card-detail").is_visible()
+    toggle.uncheck()
+    assert expand.get_attribute("aria-expanded") == "false"
+    assert page.locator("#template-queue-count").inner_text() == "0"
+    page.locator("#template-select-selling-task").click()
+    assert card.locator("#sample-module-body").is_visible()
+    assert page.locator("#sample-maximum").input_value() == "180"
     toggle.check()
     page.locator("#template-refresh-tasks").click()
     page.get_by_role("tab", name="坐标", exact=True).click()
@@ -201,33 +214,36 @@ def test_preview_running_and_disclosure_states_remain_independent(template_page:
     page.get_by_role("tab", name="任务", exact=True).click()
     assert toggle.is_checked()
     assert expand.get_attribute("aria-expanded") == "true"
-    assert card.locator(".template-card-detail").is_visible()
-    assert page.locator("#template-queue-count").inner_text() == "2"
-    assert page.locator("#template-log-count").inner_text() == "3"
+    assert card.locator("#sample-module-body").is_visible()
+    assert page.locator("#template-queue-count").inner_text() == "1"
+    assert page.locator("#template-log-count").inner_text() == "4"
 
 
-def test_task_selection_adds_only_a_preview_card_and_allows_removal(template_page: Any) -> None:
+def test_task_selection_opens_existing_selling_task_without_losing_drafts(
+    template_page: Any,
+) -> None:
     page = template_page
     page.locator("#sample-maximum").fill("180")
-    page.get_by_role("button", name="＋ 移动到坐标", exact=False).click()
-    card = page.locator(".template-task-card").last
-    assert card.get_by_role("heading").inner_text() == "移动到坐标"
-    assert not card.get_by_role("switch").is_checked()
-    assert card.locator(".template-card-detail").is_visible()
-    assert page.locator("#template-saved-count").inner_text() == "4"
-    assert page.locator("#template-queue-count").inner_text() == "2"
-    assert page.locator("#sample-maximum").input_value() == "180"
-    card.get_by_role("button", name="删除示例任务", exact=True).click()
-    assert page.locator("#template-saved-count").inner_text() == "3"
+    page.locator("#sample-collapse").click()
+    assert page.locator("#sample-module-body").is_hidden()
+    for _ in range(2):
+        page.locator("#template-select-selling-task").click()
+        assert page.locator("#sample-module-body").is_visible()
+        assert page.locator("#sample-collapse").evaluate("node => node === document.activeElement")
+    assert page.locator("#template-saved-count").inner_text() == "1"
+    assert page.locator("#template-saved-list > .sample-module").count() == 1
+    assert page.locator("#template-queue-count").inner_text() == "0"
     assert page.locator("#sample-maximum").input_value() == "180"
 
 
 def test_preview_details_and_log_actions_handle_empty_states(template_page: Any) -> None:
     page = template_page
+    page.locator("#sample-enabled").check()
     page.get_by_role("button", name="运行详情", exact=True).click()
     dialog = page.get_by_role("dialog")
     assert dialog.is_visible()
-    assert dialog.locator(".template-queue-entry").count() == 2
+    assert dialog.locator(".template-queue-entry").count() == 1
+    assert dialog.locator(".template-queue-entry strong").inner_text() == "售卖弹性物资"
     page.keyboard.press("Escape")
     assert dialog.is_hidden()
     with page.expect_download() as download:
@@ -237,7 +253,6 @@ def test_preview_details_and_log_actions_handle_empty_states(template_page: Any)
     assert page.locator("#template-log-count").inner_text() == "0"
     assert page.get_by_text("暂无任务进度", exact=True).is_visible()
     assert page.get_by_role("button", name="导出示例日志", exact=True).is_disabled()
-    for toggle in page.locator(".template-task-card").get_by_role("switch").all():
-        toggle.uncheck()
+    page.locator("#sample-enabled").uncheck()
     assert page.locator("#template-queue-count").inner_text() == "0"
     assert page.locator("#template-queue-list").inner_text() == "暂无运行任务"

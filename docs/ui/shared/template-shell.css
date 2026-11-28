@@ -57,12 +57,13 @@ textarea:focus-visible {
     flex-wrap: wrap;
     gap: 20px;
     padding: 18px 0 14px;
+    line-height: normal;
 }
 
 .page-brand {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 0.9rem;
 }
 
 .page-brand img {
@@ -72,9 +73,14 @@ textarea:focus-visible {
 
 .page-brand h1 {
     display: block;
-    margin: 0 0 2px;
+    margin: 0 0 0.15rem;
     font-size: 17px;
     font-weight: 700;
+    letter-spacing: -0.025em;
+}
+
+.page-brand span {
+    display: block;
 }
 
 .page-brand span,
@@ -95,7 +101,7 @@ textarea:focus-visible {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-height: 34px;
+    min-height: 36px;
     padding: 8px 10px;
     border: 1px solid var(--theme-border, #494b52);
     border-radius: 8px;
@@ -113,7 +119,7 @@ textarea:focus-visible {
     display: inline-flex;
     align-items: center;
     gap: 8px;
-    padding: 6px 12px;
+    padding: 7px 12px;
     border: 1px solid var(--line);
     border-radius: 999px;
     color: var(--muted);
@@ -131,7 +137,7 @@ textarea:focus-visible {
 }
 
 .page-main {
-    padding: 16px 0 48px;
+    padding: 14px 0 48px;
 }
 
 .template-tabs {
@@ -139,7 +145,7 @@ textarea:focus-visible {
     flex-wrap: wrap;
     min-height: 46px;
     gap: 6px;
-    margin: 0 0 18px;
+    margin: 0 0 32px;
     padding: 5px;
     border: 1px solid var(--line);
     border-radius: 11px;
@@ -150,6 +156,10 @@ textarea:focus-visible {
 .template-tabs button {
     position: relative;
     isolation: isolate;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 36px;
     padding: 9px 18px;
     border: 0;
     border-radius: 7px;
@@ -222,10 +232,6 @@ textarea:focus-visible {
     .page-header {
         gap: 16px;
         padding: 18px 0;
-    }
-
-    .page-main {
-        padding-top: 22px;
     }
 }
 

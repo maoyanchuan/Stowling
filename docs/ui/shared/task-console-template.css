@@ -49,8 +49,7 @@
 }
 
 .template-console-heading h2,
-.template-selection-panel h2,
-.template-component-example > h2 {
+.template-selection-panel h2 {
     margin: 0;
     color: var(--text);
     font-size: 16px;
@@ -225,46 +224,10 @@
     gap: 12px;
 }
 
-.template-card-header {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    min-height: 70px;
-    padding: 10px 20px;
-}
-
-.template-card-title {
-    display: flex;
-    flex: 1;
-    align-items: center;
-    gap: 8px;
-    min-width: 0;
-    margin: 0;
-    font-size: 16px;
-    font-weight: 700;
-    overflow-wrap: anywhere;
-}
-
-.template-card-title svg {
-    flex-shrink: 0;
-    width: 18px;
-    height: 18px;
-    color: var(--warning);
-}
-
-.template-card-detail-inner {
-    padding: 0 20px 16px;
-}
-
-.template-card-detail-inner p,
-.template-feedback {
-    margin: 0 0 8px;
-    color: var(--muted);
-    font-size: 12px;
-}
-
 .template-feedback {
     margin: 12px 18px 0;
+    color: var(--muted);
+    font-size: 12px;
 }
 
 .template-task-options {
@@ -302,10 +265,6 @@
     color: var(--muted);
     font-size: 12px;
     line-height: 1.45;
-}
-
-.template-component-example > h2 {
-    margin: 8px 18px 14px;
 }
 
 .template-run-dialog {
@@ -376,10 +335,5 @@
 
     .template-saved-heading {
         margin-inline: 4px;
-    }
-
-    .template-card-header {
-        gap: 8px;
-        padding-inline: 12px;
     }
 }

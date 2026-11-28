@@ -2365,7 +2365,7 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
             <div class="template-console-heading">
                 <h2 id="template-queue-title">运行队列</h2>
                 <div class="template-heading-actions">
-                    <span id="template-queue-count" class="template-count">2</span>
+                    <span id="template-queue-count" class="template-count">0</span>
                     <button id="template-run-details" class="template-text-button"
                             type="button">运行详情</button>
                     <button id="template-refresh-queue" class="template-text-button"
@@ -2411,7 +2411,7 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
             <div class="template-console-heading template-saved-heading">
                 <div class="template-heading-actions">
                     <h2 id="template-saved-title">已保存任务</h2>
-                    <span id="template-saved-count" class="template-count">3</span>
+                    <span id="template-saved-count" class="template-count">1</span>
                 </div>
                 <div class="template-heading-actions">
                     <label class="sample-debug-mode" for="sample-debug-mode">
@@ -2423,35 +2423,7 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
                             type="button">刷新</button>
                 </div>
             </div>
-            <div id="template-saved-list" class="template-saved-list"></div>
-            <p id="template-task-feedback" class="template-feedback" role="status" hidden></p>
-        </section>
-        <section class="template-console-panel template-selection-panel"
-                 aria-labelledby="template-selection-title">
-            <h2 id="template-selection-title">任务选择</h2>
-            <div class="template-task-options">
-                <button type="button" data-template-task="move">
-                    <strong>＋ 移动到坐标</strong><span>保存目标坐标，按需加入队列</span>
-                </button>
-                <button type="button" data-template-task="pickup">
-                    <strong>＋ 掉落物拾取</strong><span>监听掉落物，拾取后存入缓存</span>
-                </button>
-                <button type="button" data-template-task="classification">
-                    <strong>＋ 分类</strong><span>从缓存取料，按分类区规则入库</span>
-                </button>
-                <button type="button" data-template-task="eat">
-                    <strong>＋ 自动进食</strong><span>饱食度偏低时吃随身食物或到箱子取食</span>
-                </button>
-                <button type="button" data-template-task="material">
-                    <strong>＋ 自动收集材料</strong><span>上传投影，自动从仓库取料并交付</span>
-                </button>
-                <button type="button" data-template-task="refresh">
-                    <strong>＋ 刷新缓存</strong><span>前往选区逐一开箱，按需定时更新库存</span>
-                </button>
-            </div>
-        </section>
-        <section class="template-component-example" aria-labelledby="template-components-title">
-            <h2 id="template-components-title">设置控件示例</h2>
+            <div id="template-saved-list" class="template-saved-list">
     <section class="sample-module" aria-labelledby="sample-module-title">
         <header class="sample-header">
             <h2 id="sample-module-title" class="sample-title">
@@ -2745,6 +2717,18 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
             </div>
         </div>
     </section>
+            </div>
+            <p id="template-task-feedback" class="template-feedback" role="status" hidden></p>
+        </section>
+        <section class="template-console-panel template-selection-panel"
+                 aria-labelledby="template-selection-title">
+            <h2 id="template-selection-title">任务选择</h2>
+            <div class="template-task-options">
+                <button id="template-select-selling-task" type="button">
+                    <strong>＋ 售卖弹性物资</strong>
+                    <span>配置地区、售卖策略与数量</span>
+                </button>
+            </div>
         </section>
     </div>
     <dialog id="template-run-dialog" class="template-run-dialog"

@@ -2,10 +2,11 @@
     "use strict";
 
     const unit = 26;
-    const names = {chest: "双箱", checker: "紫黑方块", glass: "玻璃", low: "低矮构件"};
+    const names = {chest: "双箱", single: "小箱子",
+        checker: "紫黑方块", glass: "玻璃", low: "低矮构件"};
     const directions = {ArrowLeft: [-1, 0], ArrowRight: [1, 0],
         ArrowUp: [0, -1], ArrowDown: [0, 1]};
-    const hint = "每格 1 方块 · 拖到空格松手放置，也可聚焦构件后用方向键移动。";
+    const hint = "拖动或用方向键移动 · 小箱子左右相邻自动合并，右键双箱可拆分。";
 
     /** @param {string} tag @param {object} attrs @returns {SVGElement} */
     function svgElement(tag, attrs) {
@@ -36,22 +37,27 @@
         target.style.display = "none";
         svg.append(target);
 
-        const pieces = [];
+        const addChest = figure.querySelector(".classic-add-chest");
+        const defaults = new Map();
+        const pieces = new Map();
         let positions = {};
         let drag = null;
         let locked = true;
 
         /** @param {string} kind @param {number} x @param {number} y @returns {void} */
         function add(kind, x, y) {
-            const width = kind === "chest" ? 2 : 1;
-            const id = kind + "-" + pieces.length;
+            defaults.set(kind + "-" + defaults.size, {kind, x, y});
+        }
+
+        /** @param {string} id @returns {object} */
+        function makePiece(id) {
             const node = svgElement("g", {"data-piece": id, tabindex: 0, role: "button"});
-            node.append(svgElement("use", {href: "#" + kind, "pointer-events": "none",
-                x: kind === "chest" ? 2 : 0, y: kind === "low" ? 13 : 0}));
-            node.append(svgElement("rect", {class: "piece-hit", width: width * unit,
-                height: unit}));
+            node.append(svgElement("use", {"pointer-events": "none"}));
+            node.append(svgElement("rect", {class: "piece-hit", height: unit}));
             svg.append(node);
-            pieces.push({id, kind, x, y, width, node});
+            const piece = {id, node};
+            bindPiece(piece);
+            return piece;
         }
         const side = [["checker", 3, 0], ["chest", 4, 0], ["chest", 1, 1],
             ["checker", 2, 2], ["chest", 0, 3], ["checker", 1, 4], ["chest", 0, 5],
@@ -61,11 +67,6 @@
             add(kind, 14 - x - (kind === "chest" ? 2 : 1), y + 1);
         }
         for (let x = 6; x <= 8; x++) add("glass", x, 7);
-
-        /** @param {object} piece @returns {object} */
-        function position(piece) {
-            return positions[piece.id] || piece;
-        }
 
         /** @param {object} piece @param {number} x @param {number} y @returns {string} */
         function coordinates(piece, x, y) {
@@ -77,11 +78,11 @@
         /** @param {object} piece @param {number} x @param {number} y @returns {boolean} */
         function fits(piece, x, y) {
             if (x < 0 || x + piece.width > columns || y < 0 || y >= rows) return false;
-            return pieces.every(other => {
-                const p = position(other);
-                return !other.visible || other === piece || p.y !== y || x >= p.x + other.width
-                    || x + piece.width <= p.x;
-            });
+            for (const other of pieces.values()) {
+                if (other.visible && other !== piece && other.y === y
+                        && x < other.x + other.width && x + piece.width > other.x) return false;
+            }
+            return true;
         }
 
         /** @param {object} piece @param {number} x @param {number} y @returns {void} */
@@ -89,22 +90,79 @@
             piece.node.setAttribute("transform", `translate(${x * unit} ${y * unit})`);
         }
 
+        /** @param {object} next @param {string} id @param {object} value @returns {void} */
+        function put(next, id, value) {
+            const base = defaults.get(id);
+            if (base && base.kind === value.kind && base.x === value.x && base.y === value.y) {
+                delete next[id];
+            } else {
+                next[id] = value;
+            }
+        }
+
+        /** @param {object} next @param {string} focusId @returns {void} */
+        function apply(next, focusId) {
+            history.push(positions);
+            changed(next);
+            const piece = pieces.get(focusId);
+            piece.node.focus({preventScroll: true});
+            feedback.textContent = coordinates(piece, piece.x, piece.y);
+        }
+
+        /** @param {string} id @param {string} kind @param {number} x @param {number} y
+         * @returns {void} */
+        function drop(id, kind, x, y) {
+            const next = {...positions};
+            if (kind === "single") {
+                const neighbors = Array.from(pieces.values()).filter(other => other.id !== id
+                    && other.visible && other.kind === "single" && other.y === y
+                    && Math.abs(other.x - x) === 1);
+                const mate = neighbors.sort((a, b) => a.x - b.x)[0];
+                if (mate) {
+                    if (defaults.has(mate.id)) next[mate.id] = null;
+                    else delete next[mate.id];
+                    kind = "chest";
+                    x = Math.min(x, mate.x);
+                }
+            }
+            put(next, id, {kind, x, y});
+            apply(next, id);
+        }
+
+        /** @param {object} piece @returns {void} */
+        function split(piece) {
+            if (locked || drag || piece.kind !== "chest") return;
+            const next = {...positions};
+            put(next, piece.id, {kind: "single", x: piece.x, y: piece.y});
+            next[crypto.randomUUID()] = {kind: "single", x: piece.x + 1, y: piece.y};
+            apply(next, piece.id);
+            feedback.textContent = "已原地拆为两个小箱子。";
+        }
+
+        addChest.addEventListener("click", () => {
+            if (locked || drag) return;
+            for (let y = 0; y < rows; y++) {
+                for (let x = 0; x < columns; x++) {
+                    if (fits({width: 1}, x, y)) {
+                        drop(crypto.randomUUID(), "single", x, y);
+                        return;
+                    }
+                }
+            }
+            feedback.textContent = "当前单片没有空格可放置小箱子。";
+        });
+
         /** @param {object} piece @param {number} x @param {number} y @returns {void} */
         function commit(piece, x, y) {
             if (!fits(piece, x, y)) {
                 feedback.textContent = "请放到能容纳整个构件的空格。";
                 return;
             }
-            const current = position(piece);
-            if (current.x === x && current.y === y) {
+            if (piece.x === x && piece.y === y) {
                 feedback.textContent = coordinates(piece, x, y);
                 return;
             }
-            history.push(positions);
-            const next = {...positions, [piece.id]: {x, y}};
-            if (x === piece.x && y === piece.y) delete next[piece.id];
-            changed(next);
-            feedback.textContent = coordinates(piece, x, y);
+            drop(piece.id, piece.kind, x, y);
         }
 
         /** @returns {void} */
@@ -114,8 +172,7 @@
             drag = null;
             if (svg.hasPointerCapture(pointerId)) svg.releasePointerCapture(pointerId);
             piece.node.classList.remove("moving");
-            const p = position(piece);
-            place(piece, p.x, p.y);
+            place(piece, piece.x, piece.y);
             target.style.display = "none";
         }
 
@@ -131,13 +188,18 @@
             return {x: (point.x - drag.dx) / unit, y: (point.y - drag.dy) / unit};
         }
 
-        for (const piece of pieces) {
+        /** @param {object} piece @returns {void} */
+        function bindPiece(piece) {
+            piece.node.addEventListener("contextmenu", event => {
+                if (piece.kind !== "chest" || locked) return;
+                event.preventDefault();
+                split(piece);
+            });
             piece.node.addEventListener("pointerdown", event => {
                 if (locked || drag || event.button !== 0) return;
-                const p = position(piece);
                 const point = local(event);
                 drag = {piece, pointerId: event.pointerId,
-                    dx: point.x - p.x * unit, dy: point.y - p.y * unit};
+                    dx: point.x - piece.x * unit, dy: point.y - piece.y * unit};
                 piece.node.focus({preventScroll: true});
                 svg.setPointerCapture(event.pointerId);
                 piece.node.classList.add("moving");
@@ -145,11 +207,15 @@
             });
             piece.node.addEventListener("keydown", event => {
                 if (event.key === "Escape") cancel();
+                if (event.shiftKey && event.key === "F10" && piece.kind === "chest") {
+                    event.preventDefault();
+                    split(piece);
+                    return;
+                }
                 if (locked || drag || !Object.hasOwn(directions, event.key)) return;
                 event.preventDefault();
                 const [dx, dy] = directions[event.key];
-                const p = position(piece);
-                commit(piece, p.x + dx, p.y + dy);
+                commit(piece, piece.x + dx, piece.y + dy);
             });
         }
         svg.addEventListener("pointermove", event => {
@@ -244,16 +310,36 @@
                 `${stage} · X = ${origin.x}${partial ? " · 局部" : ""}`;
             feedback.textContent = stale ? "选区已变更，重新预览后可移动构件。" : hint;
             undo.disabled = locked || !history.length;
-            for (const piece of pieces) {
-                const p = position(piece);
-                piece.visible = p.x >= 0 && p.y >= 0 && p.x + piece.width <= columns && p.y < rows;
-                piece.node.style.display = piece.visible ? "" : "none";
-                place(piece, p.x, p.y);
-                piece.node.setAttribute("aria-disabled", String(locked));
-                piece.node.setAttribute("tabindex", locked || !piece.visible ? "-1" : "0");
-                piece.node.setAttribute("aria-label", coordinates(piece, p.x, p.y));
+            addChest.disabled = locked;
+            const ids = new Set([...defaults.keys(), ...Object.keys(positions)]);
+            for (const [id, piece] of pieces) {
+                if (!ids.has(id) || positions[id] === null) {
+                    piece.node.remove();
+                    pieces.delete(id);
+                }
             }
-            if (!stale && !pieces.some(piece => piece.visible)) {
+            for (const id of ids) {
+                if (positions[id] === null) continue;
+                const value = {...defaults.get(id), ...positions[id]};
+                const piece = pieces.get(id) || makePiece(id);
+                pieces.set(id, piece);
+                Object.assign(piece, value);
+                piece.width = piece.kind === "chest" ? 2 : 1;
+                const {x, y, width, kind, node} = piece;
+                const art = node.firstElementChild;
+                art.setAttribute("href", "#" + kind);
+                art.setAttribute("x", kind === "chest" ? 2 : 0);
+                art.setAttribute("y", kind === "low" ? 13 : 0);
+                node.lastElementChild.setAttribute("width", width * unit);
+                node.dataset.kind = kind;
+                piece.visible = x >= 0 && y >= 0 && x + width <= columns && y < rows;
+                node.style.display = piece.visible ? "" : "none";
+                place(piece, x, y);
+                node.setAttribute("aria-disabled", String(locked));
+                node.setAttribute("tabindex", locked || !piece.visible ? "-1" : "0");
+                node.setAttribute("aria-label", coordinates(piece, x, y));
+            }
+            if (!stale && !Array.from(pieces.values()).some(piece => piece.visible)) {
                 feedback.textContent = "此范围内没有完整的示例构件。";
             }
         }

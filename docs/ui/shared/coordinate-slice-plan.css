@@ -67,6 +67,7 @@
 
 .classic-footer {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
     gap: 10px;
@@ -75,5 +76,5 @@
     border-top: 1px solid var(--line);
 }
 
-.classic-footer p { padding: 0; }
+.classic-footer p { flex: 1 1 220px; padding: 0; }
 .classic-axis { fill: var(--muted); font: 9px monospace; }

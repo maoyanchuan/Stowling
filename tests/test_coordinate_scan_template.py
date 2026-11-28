@@ -276,3 +276,50 @@ def test_classic_layout_drags_snaps_and_keeps_applied_snapshot(scan_page: Any) -
     assert chest.get_attribute("aria-disabled") == "true"
     chest.dispatch_event("keydown", {"key": "ArrowDown"})
     assert chest.get_attribute("transform") == moved
+
+
+def test_single_chests_merge_split_move_and_undo(scan_page: Any) -> None:
+    page = scan_page
+    page.locator('[data-coordinate-id="scanned-zone-demo"]').click()
+    add = page.get_by_role("button", name="添加小箱子")
+    singles = page.locator('.classic-board [data-kind="single"]')
+    double = page.locator('.classic-board [data-kind="chest"][transform="translate(0 0)"]')
+    add.click()
+    assert singles.count() == 1
+    add.click()
+    assert double.count() == 1
+    assert singles.count() == 0
+    double.click(button="right")
+    assert singles.count() == 2
+    left = page.locator('[data-kind="single"][transform="translate(0 0)"]')
+    left.press("ArrowDown")
+    assert singles.count() == 2
+    moved = page.locator('[data-kind="single"][transform="translate(0 26)"]')
+    moved.press("ArrowUp")
+    assert double.count() == 1
+    page.locator(".classic-undo").click()
+    assert singles.count() == 2
+    assert moved.count() == 1
+
+
+def test_split_builtin_double_survives_apply_save_and_reload_selection(scan_page: Any) -> None:
+    page = scan_page
+    choose_mode(page, "scan")
+    page.locator("#category-scan-start").click()
+    chest = page.locator('.classic-board [data-kind="chest"]:visible').first
+    chest.click(button="right")
+    singles = page.locator('.classic-board [data-kind="single"]:visible')
+    assert singles.count() == 2
+    page.locator("#category-scan-apply").click()
+    page.locator("#save-coordinate").click()
+    page.locator('[data-coordinate-id="home"]').click()
+    page.locator('[data-coordinate-id="custom-rules-demo"]').click()
+    assert singles.count() == 2
+    page.locator("#category-scan-start").click()
+    assert singles.count() == 0
+    page.locator("#category-scan-discard").click()
+    assert singles.count() == 2
+    page.locator("#category-overall-first-y").fill("-46")
+    assert page.get_by_role("button", name="添加小箱子").is_disabled()
+    chest.dispatch_event("contextmenu")
+    assert singles.count() == 2

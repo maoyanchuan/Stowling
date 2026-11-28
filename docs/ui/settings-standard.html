@@ -18,10 +18,12 @@
     <link rel="stylesheet" href="shared/settings-theme.css">
     <link rel="stylesheet" href="shared/template-shell.css">
     <link rel="stylesheet" href="shared/task-template.css">
+    <link rel="stylesheet" href="shared/task-console-template.css">
     <link rel="stylesheet" href="shared/coordinate-template.css">
     <link rel="stylesheet" href="shared/settings-controls.css">
     <script src="shared/settings-controls.js"></script>
     <script src="shared/template-tabs.js" defer></script>
+    <script src="shared/task-console-template.js" defer></script>
 </head>
 <body data-active-template="task">
 <header class="page-header">
@@ -2331,15 +2333,19 @@ LrHgw1pwebYslzc3N3/wuvqPcaK3kfgTgGpVjBtlCmiVa9TMVC1rChhzEUkgSvo7KErKOQajDcQT
 EeK06yv/lAJifMSnwXV7e/1z+9/nrtbh1Sr/xarH1Xr3qtbDtY3XFevv679LfbFguXoHZ+v4navX
 eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
 ">
-            <div><strong>Stowling 控制台</strong><span>任务与坐标 · 标准模板</span></div>
+            <div>
+                <h1>Stowling 控制台</h1>
+                <span id="template-page-subtitle">任务管理 · 已保存任务与运行队列</span>
+            </div>
         </div>
-        <div class="theme-picker" role="group" aria-label="页面主题">
-            <button type="button" data-theme-choice="green" aria-pressed="true">
-                <span class="theme-swatch theme-swatch-green" aria-hidden="true"></span>浅绿
+        <div class="template-header-controls">
+            <button id="template-theme-toggle" class="template-theme-toggle" type="button"
+                    aria-label="浅绿色主题" aria-pressed="true" title="切换为深灰主题">
+                主题：浅绿
             </button>
-            <button type="button" data-theme-choice="gray" aria-pressed="false">
-                <span class="theme-swatch theme-swatch-gray" aria-hidden="true"></span>深灰
-            </button>
+            <span class="template-connection" title="离线界面示例，未连接游戏服务">
+                <span class="template-connection-dot" aria-hidden="true"></span>离线预览
+            </span>
         </div>
     </header>
     <main class="page-main">
@@ -2350,18 +2356,102 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
                     data-template-tab="coordinates" aria-controls="template-coordinates-panel"
                     aria-selected="false" tabindex="-1">坐标</button>
         </div>
-        <div class="page-heading">
-            <h1>任务与坐标标准模板</h1>
-            <p>在同一页面切换任务设置与坐标管理，保留各自填写的内容。</p>
-        </div>
         <section id="template-task-panel" class="template-panel" role="tabpanel"
                  aria-labelledby="template-tab-task">
-<div id="stowling-settings-standard" aria-label="任务模块布局">
-    <label class="sample-debug-mode" for="sample-debug-mode">
-        <span>调试模式</span>
-        <input id="sample-debug-mode" class="sample-switch cursor-interaction"
-               type="checkbox" role="switch">
-    </label>
+<div id="stowling-settings-standard" class="template-task-console" aria-label="任务模块布局">
+    <aside class="template-monitor-rail" aria-label="任务运行与日志">
+        <section class="template-console-panel template-queue-panel"
+                 aria-labelledby="template-queue-title">
+            <div class="template-console-heading">
+                <h2 id="template-queue-title">运行队列</h2>
+                <div class="template-heading-actions">
+                    <span id="template-queue-count" class="template-count">2</span>
+                    <button id="template-run-details" class="template-text-button"
+                            type="button">运行详情</button>
+                    <button id="template-refresh-queue" class="template-text-button"
+                            type="button">刷新</button>
+                </div>
+            </div>
+            <p class="template-rail-caption">紧急 → 普通 → 后台 · 排队与监听</p>
+            <p id="template-queue-status" class="template-rail-caption" role="status">
+                离线示例 · 等待预览操作
+            </p>
+            <div id="template-queue-list" class="template-queue-list" aria-live="polite"></div>
+        </section>
+        <section class="template-console-panel template-progress-panel"
+                 aria-labelledby="template-progress-title">
+            <div class="template-console-heading">
+                <h2 id="template-progress-title">任务进度</h2>
+                <div class="template-heading-actions">
+                    <span id="template-log-count" class="template-count">1</span>
+                    <button id="template-export-logs" class="template-icon-button"
+                            type="button" aria-label="导出示例日志" title="导出示例日志">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                             stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
+                             aria-hidden="true">
+                            <path d="M12 3v12m-5-5 5 5 5-5M4 16v4h16v-4" />
+                        </svg>
+                    </button>
+                    <button id="template-clear-logs" class="template-icon-button"
+                            type="button" aria-label="清空示例日志" title="清空示例日志">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                             stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
+                             aria-hidden="true">
+                            <path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v5m4-5v5" />
+                        </svg>
+                    </button>
+                </div>
+            </div>
+            <div id="template-log-list" class="template-log-list" role="log"
+                 aria-label="任务进度示例" tabindex="0"></div>
+        </section>
+    </aside>
+    <div class="template-task-workbench">
+        <section class="template-saved-tasks" aria-labelledby="template-saved-title">
+            <div class="template-console-heading template-saved-heading">
+                <div class="template-heading-actions">
+                    <h2 id="template-saved-title">已保存任务</h2>
+                    <span id="template-saved-count" class="template-count">3</span>
+                </div>
+                <div class="template-heading-actions">
+                    <label class="sample-debug-mode" for="sample-debug-mode">
+                        <span>调试模式</span>
+                        <input id="sample-debug-mode" class="sample-switch cursor-interaction"
+                               type="checkbox" role="switch">
+                    </label>
+                    <button id="template-refresh-tasks" class="template-text-button"
+                            type="button">刷新</button>
+                </div>
+            </div>
+            <div id="template-saved-list" class="template-saved-list"></div>
+            <p id="template-task-feedback" class="template-feedback" role="status" hidden></p>
+        </section>
+        <section class="template-console-panel template-selection-panel"
+                 aria-labelledby="template-selection-title">
+            <h2 id="template-selection-title">任务选择</h2>
+            <div class="template-task-options">
+                <button type="button" data-template-task="move">
+                    <strong>＋ 移动到坐标</strong><span>保存目标坐标，按需加入队列</span>
+                </button>
+                <button type="button" data-template-task="pickup">
+                    <strong>＋ 掉落物拾取</strong><span>监听掉落物，拾取后存入缓存</span>
+                </button>
+                <button type="button" data-template-task="classification">
+                    <strong>＋ 分类</strong><span>从缓存取料，按分类区规则入库</span>
+                </button>
+                <button type="button" data-template-task="eat">
+                    <strong>＋ 自动进食</strong><span>饱食度偏低时吃随身食物或到箱子取食</span>
+                </button>
+                <button type="button" data-template-task="material">
+                    <strong>＋ 自动收集材料</strong><span>上传投影，自动从仓库取料并交付</span>
+                </button>
+                <button type="button" data-template-task="refresh">
+                    <strong>＋ 刷新缓存</strong><span>前往选区逐一开箱，按需定时更新库存</span>
+                </button>
+            </div>
+        </section>
+        <section class="template-component-example" aria-labelledby="template-components-title">
+            <h2 id="template-components-title">设置控件示例</h2>
     <section class="sample-module" aria-labelledby="sample-module-title">
         <header class="sample-header">
             <h2 id="sample-module-title" class="sample-title">
@@ -2655,8 +2745,22 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
             </div>
         </div>
     </section>
+        </section>
+    </div>
+    <dialog id="template-run-dialog" class="template-run-dialog"
+            aria-labelledby="template-run-dialog-title">
+        <div class="template-console-heading">
+            <h2 id="template-run-dialog-title">运行详情（示例）</h2>
+            <form method="dialog">
+                <button class="template-text-button" type="submit">关闭</button>
+            </form>
+        </div>
+        <div id="template-run-dialog-list" class="template-dialog-list"></div>
+    </dialog>
 </div>
-        <p class="page-note">本页仅模拟任务开始／关闭与设置交互，不执行游戏任务。</p>
+        <p class="page-note">
+            离线 UI 模板 · 队列、进度和任务均为示例。操作仅改变预览，不连接或执行游戏任务。
+        </p>
         </section>
         <section id="template-coordinates-panel" class="template-panel" role="tabpanel"
                  data-settings-template="coordinates" aria-labelledby="template-tab-coordinates"

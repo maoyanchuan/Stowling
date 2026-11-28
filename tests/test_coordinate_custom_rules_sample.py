@@ -93,7 +93,8 @@ def test_controls_keep_drafts_and_fit_both_themes_and_widths(
 ) -> None:
     page = rules_page
     page.set_viewport_size({"width": width, "height": 1253})
-    page.locator(f'[data-theme-choice="{theme}"]').click()
+    if page.locator("html").get_attribute("data-theme") != theme:
+        page.locator("#template-theme-toggle").click()
     root = options_root(page, scope)
     panel = field(root, "bindings-panel")
     toggle = field(root, "multi-bindings")
@@ -356,7 +357,8 @@ def test_main_settings_stay_compact_and_aligned_in_both_themes(
 ) -> None:
     page = rules_page
     page.set_viewport_size({"width": width, "height": 1253})
-    page.locator(f'[data-theme-choice="{theme}"]').click()
+    if page.locator("html").get_attribute("data-theme") != theme:
+        page.locator("#template-theme-toggle").click()
     root = page.locator(".category-options").first
     assert field(root, "recognition-panel").is_hidden()
     assert field(root, "bindings-panel").is_hidden()

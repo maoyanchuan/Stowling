@@ -86,14 +86,15 @@ def test_theme_and_layout_stay_shared_across_tabs(
 ) -> None:
     page = template_page
     page.set_viewport_size({"width": width, "height": 1100})
-    page.locator(f'[data-theme-choice="{theme}"]').click()
+    if page.locator("html").get_attribute("data-theme") != theme:
+        page.locator("#template-theme-toggle").click()
     tab_bounds = page.get_by_role("tablist").bounding_box()
     main_bounds = page.locator(".page-main").bounding_box()
-    heading_bounds = page.locator(".page-heading").bounding_box()
-    assert tab_bounds is not None and main_bounds is not None and heading_bounds is not None
+    panel_bounds = page.get_by_role("tabpanel").bounding_box()
+    assert tab_bounds is not None and main_bounds is not None and panel_bounds is not None
     assert tab_bounds["x"] == pytest.approx(main_bounds["x"])
     assert tab_bounds["width"] == pytest.approx(main_bounds["width"])
-    assert tab_bounds["y"] + tab_bounds["height"] <= heading_bounds["y"]
+    assert tab_bounds["y"] + tab_bounds["height"] <= panel_bounds["y"]
     if width <= 540:
         task_bounds = page.get_by_role("tab", name="任务", exact=True).bounding_box()
         coordinate_bounds = page.get_by_role("tab", name="坐标", exact=True).bounding_box()
@@ -103,7 +104,9 @@ def test_theme_and_layout_stay_shared_across_tabs(
         page.get_by_role("tab", name=name, exact=True).click()
         assert page.get_by_role("tablist").bounding_box() == tab_bounds
         assert page.locator("html").get_attribute("data-theme") == theme
-        assert page.locator(f'[data-theme-choice="{theme}"]').get_attribute("aria-pressed") == "true"
+        assert page.locator("#template-theme-toggle").get_attribute("aria-pressed") == str(
+            theme == "green"
+        ).lower()
         assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
 
 
@@ -129,5 +132,112 @@ def test_tabs_work_when_browser_storage_is_unavailable(template_page: Any) -> No
     page.reload()
     page.get_by_role("tab", name="坐标", exact=True).click()
     assert page.locator("#coordinate-form").is_visible()
-    page.locator('[data-theme-choice="gray"]').click()
+    page.locator("#template-theme-toggle").click()
     assert page.locator("html").get_attribute("data-theme") == "gray"
+
+
+def test_header_theme_toggle_and_subtitle_follow_both_panels(template_page: Any) -> None:
+    page = template_page
+    toggle = page.get_by_role("button", name="浅绿色主题", exact=True)
+    assert toggle.count() == 1
+    assert toggle.inner_text() == "主题：浅绿"
+    assert page.get_by_role("heading", level=1).inner_text() == "Stowling 控制台"
+    assert page.locator(".template-connection").inner_text() == "离线预览"
+    toggle.click()
+    assert toggle.inner_text() == "主题：深灰"
+    assert toggle.get_attribute("title") == "切换为浅绿主题"
+    assert toggle.get_attribute("aria-pressed") == "false"
+    page.get_by_role("tab", name="坐标", exact=True).click()
+    assert page.locator("#template-page-subtitle").inner_text() == "坐标管理 · 坐标资源与分类区"
+    page.reload()
+    assert page.get_by_role("tab", selected=True).inner_text() == "坐标"
+    assert toggle.inner_text() == "主题：深灰"
+    page.get_by_role("tab", name="任务", exact=True).click()
+    assert page.locator("#template-page-subtitle").inner_text() == "任务管理 · 已保存任务与运行队列"
+    toggle.click()
+    assert toggle.inner_text() == "主题：浅绿"
+
+
+@pytest.mark.parametrize("theme", ["green", "gray"])
+@pytest.mark.parametrize("width", [320, 780, 1440])
+def test_console_modules_follow_desktop_and_narrow_layout(
+    template_page: Any, theme: str, width: int,
+) -> None:
+    page = template_page
+    page.set_viewport_size({"width": width, "height": 1100})
+    if page.locator("html").get_attribute("data-theme") != theme:
+        page.locator("#template-theme-toggle").click()
+    rail = page.locator(".template-monitor-rail").bounding_box()
+    workbench = page.locator(".template-task-workbench").bounding_box()
+    assert rail is not None and workbench is not None
+    if width > 780:
+        assert rail["x"] + rail["width"] < workbench["x"]
+        assert rail["y"] == pytest.approx(workbench["y"])
+    else:
+        assert workbench["y"] + workbench["height"] <= rail["y"]
+    assert page.locator("#template-saved-count").inner_text() == "3"
+    assert page.locator("#template-queue-count").inner_text() == "2"
+    assert page.locator("#template-log-count").inner_text() == "1"
+    assert page.locator(".template-task-options button").count() == 6
+    assert page.locator(".template-task-card").count() == 3
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+
+
+def test_preview_running_and_disclosure_states_remain_independent(template_page: Any) -> None:
+    page = template_page
+    card = page.locator(".template-task-card").first
+    expand = card.locator(".sample-expand")
+    toggle = card.get_by_role("switch")
+    assert toggle.is_checked()
+    toggle.uncheck()
+    assert expand.get_attribute("aria-expanded") == "false"
+    assert page.locator("#template-queue-count").inner_text() == "1"
+    expand.click()
+    assert card.locator(".template-card-detail").is_visible()
+    toggle.check()
+    page.locator("#template-refresh-tasks").click()
+    page.get_by_role("tab", name="坐标", exact=True).click()
+    page.locator("#template-theme-toggle").click()
+    page.get_by_role("tab", name="任务", exact=True).click()
+    assert toggle.is_checked()
+    assert expand.get_attribute("aria-expanded") == "true"
+    assert card.locator(".template-card-detail").is_visible()
+    assert page.locator("#template-queue-count").inner_text() == "2"
+    assert page.locator("#template-log-count").inner_text() == "3"
+
+
+def test_task_selection_adds_only_a_preview_card_and_allows_removal(template_page: Any) -> None:
+    page = template_page
+    page.locator("#sample-maximum").fill("180")
+    page.get_by_role("button", name="＋ 移动到坐标", exact=False).click()
+    card = page.locator(".template-task-card").last
+    assert card.get_by_role("heading").inner_text() == "移动到坐标"
+    assert not card.get_by_role("switch").is_checked()
+    assert card.locator(".template-card-detail").is_visible()
+    assert page.locator("#template-saved-count").inner_text() == "4"
+    assert page.locator("#template-queue-count").inner_text() == "2"
+    assert page.locator("#sample-maximum").input_value() == "180"
+    card.get_by_role("button", name="删除示例任务", exact=True).click()
+    assert page.locator("#template-saved-count").inner_text() == "3"
+    assert page.locator("#sample-maximum").input_value() == "180"
+
+
+def test_preview_details_and_log_actions_handle_empty_states(template_page: Any) -> None:
+    page = template_page
+    page.get_by_role("button", name="运行详情", exact=True).click()
+    dialog = page.get_by_role("dialog")
+    assert dialog.is_visible()
+    assert dialog.locator(".template-queue-entry").count() == 2
+    page.keyboard.press("Escape")
+    assert dialog.is_hidden()
+    with page.expect_download() as download:
+        page.get_by_role("button", name="导出示例日志", exact=True).click()
+    assert download.value.suggested_filename == "stowling-template-example-logs.json"
+    page.get_by_role("button", name="清空示例日志", exact=True).click()
+    assert page.locator("#template-log-count").inner_text() == "0"
+    assert page.get_by_text("暂无任务进度", exact=True).is_visible()
+    assert page.get_by_role("button", name="导出示例日志", exact=True).is_disabled()
+    for toggle in page.locator(".template-task-card").get_by_role("switch").all():
+        toggle.uncheck()
+    assert page.locator("#template-queue-count").inner_text() == "0"
+    assert page.locator("#template-queue-list").inner_text() == "暂无运行任务"

@@ -17,6 +17,9 @@
             panel.inert = !active;
         }
         document.body.dataset.activeTemplate = selected.dataset.templateTab;
+        document.getElementById("template-page-subtitle").textContent =
+            selected.dataset.templateTab === "coordinates"
+                ? "坐标管理 · 坐标资源与分类区" : "任务管理 · 已保存任务与运行队列";
         document.dispatchEvent(new CustomEvent("stowling:template-tab-change"));
         if (!persist) return;
         try {
@@ -30,9 +33,11 @@
     function setTheme(theme, persist = true) {
         const selected = theme === "gray" ? "gray" : "green";
         document.documentElement.dataset.theme = selected;
-        for (const button of document.querySelectorAll("[data-theme-choice]")) {
-            button.setAttribute("aria-pressed", String(button.dataset.themeChoice === selected));
-        }
+        const button = document.getElementById("template-theme-toggle");
+        const green = selected === "green";
+        button.textContent = green ? "主题：浅绿" : "主题：深灰";
+        button.setAttribute("aria-pressed", String(green));
+        button.title = green ? "切换为深灰主题" : "切换为浅绿主题";
         if (!persist) return;
         try {
             localStorage.setItem(themeKey, selected);
@@ -55,9 +60,9 @@
             tabs[next].focus();
         });
     }
-    for (const button of document.querySelectorAll("[data-theme-choice]")) {
-        button.addEventListener("click", () => setTheme(button.dataset.themeChoice));
-    }
+    document.getElementById("template-theme-toggle").addEventListener("click", () => {
+        setTheme(document.documentElement.dataset.theme === "green" ? "gray" : "green");
+    });
 
     let initial = window.location.hash.slice(1);
     if (!initial) {

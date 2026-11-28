@@ -250,7 +250,8 @@ def test_binding_submenus_are_not_clipped_or_offset(
 ) -> None:
     page = sample_page
     page.set_viewport_size({"width": width, "height": 1253})
-    page.locator(f'[data-theme-choice="{theme}"]').click()
+    if page.locator("html").get_attribute("data-theme") != theme:
+        page.locator("#template-theme-toggle").click()
     card = page.locator(".category-binding-card").first
     card.locator(".category-binding-enabled").check()
     choose(card, "storageMethod", "box")

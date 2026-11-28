@@ -1,0 +1,385 @@
+/* Offline console layout mirrors the production task page without loading its services. */
+#stowling-settings-standard.template-task-console {
+    display: grid;
+    grid-template-columns: 270px minmax(0, 1fr);
+    align-items: start;
+    gap: 22px;
+}
+
+.template-monitor-rail {
+    position: sticky;
+    top: 16px;
+    display: grid;
+    grid-template-rows: minmax(0, 1.1fr) minmax(0, 1fr);
+    gap: 12px;
+    height: min(900px, calc(100vh - 32px));
+    min-height: 480px;
+    min-width: 0;
+}
+
+.template-console-panel {
+    min-width: 0;
+    padding: 18px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--panel);
+    box-shadow: var(--shadow);
+}
+
+.template-monitor-rail > .template-console-panel {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    padding: 14px;
+    background: var(--theme-surface, #191a1d);
+    box-shadow: none;
+}
+
+.template-console-heading,
+.template-heading-actions {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.template-console-heading {
+    justify-content: space-between;
+    margin-bottom: 14px;
+}
+
+.template-console-heading h2,
+.template-selection-panel h2,
+.template-component-example > h2 {
+    margin: 0;
+    color: var(--text);
+    font-size: 16px;
+    font-weight: 700;
+}
+
+.template-monitor-rail .template-heading-actions {
+    gap: 4px;
+}
+
+.template-count {
+    display: inline-grid;
+    place-items: center;
+    min-width: 21px;
+    padding: 1px 7px;
+    border-radius: 999px;
+    color: var(--theme-selected-text, #d5e8df);
+    background: var(--theme-selected, #303b36);
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.template-text-button,
+.template-icon-button {
+    min-height: 32px;
+    padding: 5px 8px;
+    border: 0;
+    border-radius: 8px;
+    color: var(--theme-selected-text, #bbc6bf);
+    background: transparent;
+    font-size: 13px;
+}
+
+.template-monitor-rail .template-text-button {
+    min-height: 25px;
+    padding: 3px 4px;
+    font-size: 12px;
+}
+
+.template-text-button:hover:not(:disabled),
+.template-icon-button:hover:not(:disabled) {
+    background: var(--theme-hover, #34363c);
+}
+
+.template-icon-button {
+    display: inline-grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    min-height: 28px;
+    padding: 0;
+}
+
+.template-icon-button svg {
+    width: 16px;
+    height: 16px;
+}
+
+.template-icon-button:disabled {
+    cursor: default;
+    opacity: 0.4;
+}
+
+.template-rail-caption {
+    margin: 4px 0 8px;
+    color: var(--muted);
+    font-size: 10px;
+    font-variant-numeric: tabular-nums;
+}
+
+.template-queue-list,
+.template-log-list {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    overscroll-behavior: contain;
+    background: var(--theme-subtle, #151619);
+    scrollbar-width: thin;
+    scrollbar-color: var(--line) transparent;
+}
+
+.template-queue-list,
+.template-dialog-list {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+}
+
+.template-queue-entry {
+    flex-shrink: 0;
+    padding: 9px;
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    color: var(--text);
+    background: var(--theme-card, #232428);
+}
+
+.template-entry-heading {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 6px;
+    margin-bottom: 4px;
+}
+
+.template-entry-heading strong,
+.template-log-entry > strong {
+    font-size: 11px;
+    overflow-wrap: anywhere;
+}
+
+.template-entry-heading small,
+.template-entry-message,
+.template-empty {
+    color: var(--muted);
+    font-size: 10px;
+}
+
+.template-entry-state {
+    color: var(--accent-strong);
+    font-size: 10px;
+}
+
+.template-entry-message {
+    margin: 4px 0 0;
+    line-height: 1.6;
+    overflow-wrap: anywhere;
+}
+
+.template-log-list {
+    padding: 5px 7px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+}
+
+.template-log-entry {
+    padding: 7px 0;
+    border-bottom: 1px solid var(--line);
+}
+
+.template-log-entry:last-child {
+    border-bottom: 0;
+}
+
+.template-task-workbench {
+    display: grid;
+    gap: 18px;
+    min-width: 0;
+    container-type: inline-size;
+}
+
+.template-saved-tasks {
+    min-width: 0;
+}
+
+.template-saved-heading {
+    margin: 0 18px 18px;
+    padding-top: 8px;
+}
+
+#stowling-settings-standard .template-saved-heading .sample-debug-mode {
+    margin: 0;
+}
+
+#stowling-settings-standard .template-saved-heading .sample-switch {
+    --settings-switch-width: 42px;
+    --settings-switch-height: 24px;
+}
+
+.template-saved-list {
+    display: grid;
+    gap: 12px;
+}
+
+.template-card-header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    min-height: 70px;
+    padding: 10px 20px;
+}
+
+.template-card-title {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    margin: 0;
+    font-size: 16px;
+    font-weight: 700;
+    overflow-wrap: anywhere;
+}
+
+.template-card-title svg {
+    flex-shrink: 0;
+    width: 18px;
+    height: 18px;
+    color: var(--warning);
+}
+
+.template-card-detail-inner {
+    padding: 0 20px 16px;
+}
+
+.template-card-detail-inner p,
+.template-feedback {
+    margin: 0 0 8px;
+    color: var(--muted);
+    font-size: 12px;
+}
+
+.template-feedback {
+    margin: 12px 18px 0;
+}
+
+.template-task-options {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    margin-top: 14px;
+}
+
+.template-task-options button {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+    min-height: 76px;
+    min-width: 0;
+    padding: 12px 14px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    color: var(--text);
+    background: var(--theme-subtle, #1a1b1e);
+    text-align: left;
+    overflow-wrap: anywhere;
+}
+
+.template-task-options button:hover {
+    background: var(--theme-hover, #34363c);
+}
+
+.template-task-options strong {
+    font-size: 13px;
+}
+
+.template-task-options span {
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.45;
+}
+
+.template-component-example > h2 {
+    margin: 8px 18px 14px;
+}
+
+.template-run-dialog {
+    width: min(560px, calc(100% - 32px));
+    max-height: calc(100vh - 48px);
+    padding: 20px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    color: var(--text);
+    background: var(--theme-surface, #222326);
+}
+
+.template-run-dialog::backdrop {
+    background: rgba(0, 0, 0, 0.35);
+}
+
+.template-run-dialog form {
+    margin: 0;
+}
+
+@container (min-width: 46rem) {
+    .template-task-options {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+}
+
+@container (max-width: 26rem) {
+    .template-task-options {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+@media (max-width: 1000px) {
+    #stowling-settings-standard.template-task-console {
+        grid-template-columns: 230px minmax(0, 1fr);
+        gap: 14px;
+    }
+}
+
+@media (max-width: 780px) {
+    #stowling-settings-standard.template-task-console {
+        display: flex;
+        flex-direction: column;
+    }
+
+    .template-task-workbench {
+        order: 0;
+        width: 100%;
+    }
+
+    .template-monitor-rail {
+        position: static;
+        order: 1;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        grid-template-rows: minmax(0, 1fr);
+        width: 100%;
+        height: 340px;
+        min-height: 0;
+    }
+}
+
+@media (max-width: 540px) {
+    .template-monitor-rail {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: minmax(0, 1.1fr) minmax(0, 1fr);
+        height: 600px;
+    }
+
+    .template-saved-heading {
+        margin-inline: 4px;
+    }
+
+    .template-card-header {
+        gap: 8px;
+        padding-inline: 12px;
+    }
+}

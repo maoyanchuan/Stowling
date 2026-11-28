@@ -16,7 +16,7 @@ class SampleMarkup(HTMLParser):
         self.ids: list[str] = []
         self.references: list[str] = []
         self.external_sources: list[str] = []
-        self.themes: set[str] = set()
+        self.theme_controls: list[dict[str, str | None]] = []
         self.in_module_header = False
         self.module_header_controls: list[tuple[str, dict[str, str | None]]] = []
 
@@ -36,8 +36,8 @@ class SampleMarkup(HTMLParser):
                 self.external_sources.append(source)
         if tag == "link" and values.get("href"):
             self.external_sources.append(values["href"] or "")
-        if theme := values.get("data-theme-choice"):
-            self.themes.add(theme)
+        if values.get("id") == "template-theme-toggle":
+            self.theme_controls.append(values)
 
     def handle_endtag(self, tag: str) -> None:
         if tag == "header":
@@ -75,7 +75,9 @@ def test_standalone_page_has_no_missing_labels_or_external_assets() -> None:
     assert parser.external_sources
     assert all(not source.startswith(("http:", "https:", "//"))
                and (SAMPLE.parent / source).is_file() for source in parser.external_sources)
-    assert parser.themes == {"green", "gray"}
+    assert len(parser.theme_controls) == 1
+    assert parser.theme_controls[0]["type"] == "button"
+    assert parser.theme_controls[0]["aria-pressed"] == "true"
 
 
 def test_sample_is_independent_of_host_controls_and_game_services() -> None:

@@ -6,7 +6,7 @@
         barrel: "木桶", slab: "下半砖", stairs: "楼梯", checker: "紫黑方块", glass: "玻璃", low: "低矮构件"};
     const directions = {ArrowLeft: [-1, 0], ArrowRight: [1, 0],
         ArrowUp: [0, -1], ArrowDown: [0, 1]};
-    const hint = "从侧栏选方块，再点空格放置。已有方块可拖动。";
+    const hint = "从侧栏拖到空格放置，点选方块可删除。右键楼梯旋转，右键双箱拆分。";
 
     /** @param {string} tag @param {object} attrs @returns {SVGElement} */
     function svgElement(tag, attrs) {
@@ -28,6 +28,9 @@
         grid.setAttribute("role", "button");
         grid.setAttribute("aria-label", "放置方块，方向键选格，回车放置");
         const undo = figure.querySelector(".classic-undo");
+        const remove = figure.querySelector(".classic-delete");
+        let picked = null;
+        let paletteDrag = null;
         let history = [];
         let columns = 0;
         let rows = 0;
@@ -40,6 +43,8 @@
         target.style.display = "none";
         svg.append(target);
 
+        const ghost = svgElement("use", {"pointer-events": "none", opacity: .8});
+        ghost.style.display = "none";
         const palette = figure.querySelector(".classic-palette");
         let selected = "";
         let cellX = 0;
@@ -106,12 +111,27 @@
             }
         }
 
-        /** @param {object} next @param {string} focusId @returns {void} */
+        /** @param {string|null} id @returns {void} */
+        function selectPiece(id) {
+            pieces.get(picked)?.node.removeAttribute("data-selected");
+            picked = id;
+            pieces.get(id)?.node.setAttribute("data-selected", "");
+            remove.disabled = locked || !pieces.get(id)?.visible;
+        }
+
+        /** @param {object} next @param {string} id @returns {void} */
+        function omit(next, id) {
+            if (defaults.has(id)) next[id] = null;
+            else delete next[id];
+        }
+
+        /** @param {object} next @param {string|null} focusId @returns {void} */
         function apply(next, focusId) {
             history.push(positions);
             changed(next);
-            const piece = pieces.get(focusId);
-            piece.node.focus({preventScroll: true});
+            selectPiece(focusId);
+            const focus = pieces.get(focusId)?.node || undo;
+            focus.focus({preventScroll: true});
 
         }
 
@@ -125,13 +145,14 @@
                     && Math.abs(other.x - x) === 1);
                 const mate = neighbors.sort((a, b) => a.x - b.x)[0];
                 if (mate) {
-                    if (defaults.has(mate.id)) next[mate.id] = null;
-                    else delete next[mate.id];
+                    omit(next, mate.id);
                     kind = "chest";
                     x = Math.min(x, mate.x);
                 }
             }
-            put(next, id, {kind, x, y});
+            const value = {kind, x, y};
+            if (kind === "stairs") value.turns = pieces.get(id)?.turns || 0;
+            put(next, id, value);
             apply(next, id);
         }
 
@@ -143,6 +164,31 @@
             next[crypto.randomUUID()] = {kind: "single", x: piece.x + 1, y: piece.y};
             apply(next, piece.id);
             feedback.textContent = "已原地拆为两个小箱子。";
+        }
+
+        /** @param {object} piece @returns {void} */
+        function removePiece(piece) {
+            if (!piece?.visible || locked || drag || paletteDrag) return;
+            const next = {...positions};
+            omit(next, piece.id);
+            apply(next, null);
+            feedback.textContent = `已删除${names[piece.kind]}。`;
+        }
+
+        remove.addEventListener("click", () => removePiece(pieces.get(picked)));
+
+        /** @param {object} piece @param {Event} event @returns {void} */
+        function secondary(piece, event) {
+            if (locked || drag || paletteDrag || !["chest", "stairs"].includes(piece.kind)) return;
+            event.preventDefault();
+            if (piece.kind === "chest") {
+                split(piece);
+                return;
+            }
+            const {id, kind, x, y} = piece;
+            const turns = (piece.turns + 1) % 4;
+            apply({...positions, [id]: {kind, x, y, turns}}, id);
+            feedback.textContent = `楼梯朝向已旋转至 ${turns * 90}°。`;
         }
 
         /** @returns {void} */
@@ -169,13 +215,68 @@
             icon.append(svgElement("use", {href: "#" + kind}));
             button.append(icon, document.createTextNode(label));
             palette.append(button);
-            button.addEventListener("click", () => {
+            let suppressClick = false;
+            button.addEventListener("pointerdown", event => {
+                suppressClick = false;
+                if (locked || drag || paletteDrag || event.button !== 0) return;
+                paletteDrag = {kind, button, id: event.pointerId, active: false,
+                    x: event.clientX, y: event.clientY};
+                button.setPointerCapture(event.pointerId);
+            });
+            button.addEventListener("pointermove", event => {
+                if (paletteDrag?.id !== event.pointerId) return;
+                const state = paletteDrag;
+                if (!state.active && Math.hypot(event.clientX - state.x,
+                        event.clientY - state.y) < 4) return;
+                state.active = true;
+                suppressClick = true;
+                selected = kind;
+                updatePalette();
+                const point = local(event);
+                const x = Math.floor(point.x / unit);
+                const y = Math.floor(point.y / unit);
+                const inside = x >= 0 && y >= 0 && x < columns && y < rows;
+                ghost.style.display = inside ? "" : "none";
+                ghost.setAttribute("href", "#" + kind);
+                ghost.setAttribute("transform", `translate(${x * unit} ${y * unit})`);
+                ghost.setAttribute("opacity", fits({width: 1}, x, y) ? ".8" : ".28");
+                svg.append(ghost);
+            });
+            button.addEventListener("pointerup", event => {
+                if (paletteDrag?.id !== event.pointerId) return;
+                const active = paletteDrag.active;
+                cancelPaletteDrag();
+                if (!active) return;
+                const point = local(event);
+                insert(Math.floor(point.x / unit), Math.floor(point.y / unit));
+            });
+            for (const type of ["pointercancel", "lostpointercapture"]) {
+                button.addEventListener(type, event => {
+                    if (paletteDrag?.id === event.pointerId) cancelPaletteDrag();
+                });
+            }
+            button.addEventListener("click", event => {
+                if (event.detail && suppressClick) return;
+                selectPiece(null);
                 selected = kind;
                 updatePalette();
                 grid.focus({preventScroll: true});
                 feedback.textContent = `点击空格放置${label}，或用方向键选格后按回车。`;
             });
         }
+
+        /** @returns {void} */
+        function cancelPaletteDrag() {
+            if (!paletteDrag) return;
+            const {button, id} = paletteDrag;
+            paletteDrag = null;
+            ghost.style.display = "none";
+            if (button.hasPointerCapture(id)) button.releasePointerCapture(id);
+        }
+
+        figure.addEventListener("keydown", event => {
+            if (event.key === "Escape") cancelPaletteDrag();
+        });
 
         /** @param {number} x @param {number} y @returns {void} */
         function insert(x, y) {
@@ -243,13 +344,11 @@
 
         /** @param {object} piece @returns {void} */
         function bindPiece(piece) {
-            piece.node.addEventListener("contextmenu", event => {
-                if (piece.kind !== "chest" || locked) return;
-                event.preventDefault();
-                split(piece);
-            });
+            piece.node.addEventListener("contextmenu", event => secondary(piece, event));
+            piece.node.addEventListener("focus", () => selectPiece(piece.id));
             piece.node.addEventListener("pointerdown", event => {
-                if (locked || drag || event.button !== 0) return;
+                if (locked || drag || paletteDrag || event.button !== 0) return;
+                selectPiece(piece.id);
                 const point = local(event);
                 drag = {piece, pointerId: event.pointerId,
                     dx: point.x - piece.x * unit, dy: point.y - piece.y * unit};
@@ -260,9 +359,13 @@
             });
             piece.node.addEventListener("keydown", event => {
                 if (event.key === "Escape") cancel();
-                if (event.shiftKey && event.key === "F10" && piece.kind === "chest") {
+                if (event.shiftKey && event.key === "F10") {
+                    secondary(piece, event);
+                    return;
+                }
+                if (event.key === "Delete" || event.key === "Backspace") {
                     event.preventDefault();
-                    split(piece);
+                    removePiece(piece);
                     return;
                 }
                 if (locked || drag || !Object.hasOwn(directions, event.key)) return;
@@ -325,6 +428,7 @@
         /** @returns {void} */
         function reset() {
             cancel();
+            selectPiece(null);
             history = [];
             selected = "";
             cellX = 0;
@@ -339,6 +443,7 @@
          * @param {boolean} preview @returns {void} */
         function render(region, saved, stale, preview) {
             cancel();
+            cancelPaletteDrag();
             figure.hidden = !region;
             locked = stale || !region;
             if (!region) return;
@@ -364,9 +469,15 @@
                 const piece = pieces.get(id) || makePiece(id);
                 pieces.set(id, piece);
                 Object.assign(piece, value);
+                piece.turns = value.turns || 0;
                 piece.width = piece.kind === "chest" ? 2 : 1;
                 const {x, y, width, kind, node} = piece;
                 const art = node.firstElementChild;
+                if (kind === "stairs") {
+                    art.setAttribute("transform", `rotate(${piece.turns * 90} 13 13)`);
+                } else {
+                    art.removeAttribute("transform");
+                }
                 art.setAttribute("href", "#" + kind);
                 art.setAttribute("x", kind === "chest" ? 2 : 0);
                 art.setAttribute("y", kind === "low" ? 13 : 0);
@@ -379,6 +490,7 @@
                 node.setAttribute("tabindex", locked || !piece.visible ? "-1" : "0");
                 node.setAttribute("aria-label", coordinates(piece, x, y));
             }
+            selectPiece(pieces.get(picked)?.visible ? picked : null);
 
         }
         return {render, reset};

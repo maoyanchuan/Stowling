@@ -51,6 +51,7 @@
 .classic-board .moving { opacity: .8; }
 .classic-board .piece-hit { fill: transparent; }
 
+.classic-board [data-selected] .piece-hit,
 .classic-board [data-piece]:focus-visible .piece-hit {
     stroke: var(--accent-strong);
     stroke-width: 2px;
@@ -99,6 +100,9 @@
 }
 
 .classic-palette button {
+    touch-action: none;
+    user-select: none;
+    cursor: grab;
     display: flex;
     align-items: center;
     justify-content: flex-start;

@@ -351,3 +351,53 @@ def test_palette_places_selected_block_at_clicked_cell(
     assert page.locator(f'[data-kind="{kind}"]').count() == 1
     page.locator(".classic-undo").click()
     assert placed.count() == 0
+
+
+def test_palette_drag_rotates_stairs_and_preserves_orientation(scan_page: Any) -> None:
+    page = scan_page
+    choose_mode(page, "scan")
+    page.locator("#category-scan-start").click()
+    grid = page.locator(".classic-grid")
+    grid.scroll_into_view_if_needed()
+    bounds = grid.bounding_box()
+    assert bounds is not None
+    cell = bounds["width"] / int(grid.get_attribute("width")) * 26
+    palette = page.locator('.classic-palette [data-block="stairs"]')
+    palette.drag_to(grid, target_position={"x": cell / 2, "y": cell / 2})
+    stairs = page.locator('.classic-board [data-kind="stairs"]')
+    assert stairs.count() == 1
+    palette.drag_to(stairs)
+    assert stairs.count() == 1
+    art = stairs.locator("use")
+    for angle in (90, 180, 270, 0, 90):
+        stairs.click(button="right")
+        assert art.get_attribute("transform") == f"rotate({angle} 13 13)"
+    stairs.press("ArrowRight")
+    assert art.get_attribute("transform") == "rotate(90 13 13)"
+    page.locator("#category-scan-apply").click()
+    page.locator("#save-coordinate").click()
+    page.locator('[data-coordinate-id="home"]').click()
+    page.locator('[data-coordinate-id="custom-rules-demo"]').click()
+    assert art.get_attribute("transform") == "rotate(90 13 13)"
+    stairs.press("Delete")
+    assert stairs.count() == 0
+    page.locator(".classic-undo").click()
+    assert art.get_attribute("transform") == "rotate(90 13 13)"
+
+
+def test_delete_existing_glass_restores_on_undo_and_survives_save(scan_page: Any) -> None:
+    page = scan_page
+    page.locator('[data-coordinate-id="scanned-zone-demo"]').click()
+    glass = page.locator('.classic-board [data-kind="glass"]')
+    remove = page.get_by_role("button", name="删除方块")
+    glass.first.click()
+    remove.click()
+    assert glass.count() == 2
+    assert remove.is_disabled()
+    page.locator(".classic-undo").click()
+    assert glass.count() == 3
+    glass.first.press("Delete")
+    page.locator("#save-coordinate").click()
+    page.locator('[data-coordinate-id="home"]').click()
+    page.locator('[data-coordinate-id="scanned-zone-demo"]').click()
+    assert glass.count() == 2

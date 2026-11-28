@@ -3966,6 +3966,7 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
         {id: "common", name: "常用位置", collapsed: false}
     ];
     const coordinates = [
+        scannedCoordinateExample(),
         {id: "custom-rules-demo", name: "花簇与幽匿分类（示例）", kind: "category-zone",
             folderId: "", overallRegion: {
                 first: {x: 40, y: -44, z: 30}, second: {x: 56, y: -39, z: 39}
@@ -5307,6 +5308,31 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
             overallRegion: emptyRegion(),
             bindings: [emptyBinding()],
             categoryOptions: defaultCategoryOptions()
+        };
+    }
+
+    /** @returns {Coordinate} */
+    function scannedCoordinateExample() {
+        const overallRegion = {
+            first: {x: 0, y: 64, z: 0}, second: {x: 4, y: 69, z: 9}
+        };
+        const structure = window.StowlingCoordinateSlicePlan.example(overallRegion);
+        return {
+            id: "scanned-zone-demo", name: "已扫描分类区（示例）", kind: "category-zone",
+            folderId: "common", overallRegion,
+            bindings: [{
+                id: "scanned-demo-binding", name: "示例储存单片",
+                markerRegion: structure.markerRegion,
+                storageRegion: structure.storageRegion,
+                optionsEnabled: false,
+                standingPlan: {enabled: true, points: [{
+                    standingId: "scanned-demo-standing", position: structure.standing,
+                    subregionsEnabled: false, expanded: false
+                }]}
+            }],
+            categoryOptions: {...defaultCategoryOptions(), scopeMode: "selection"},
+            scanDraft: {mode: "scan", previewRegion: null,
+                appliedRegion: cloneRegion(overallRegion), expanded: false}
         };
     }
 

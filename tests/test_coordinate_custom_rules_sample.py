@@ -19,6 +19,7 @@ def rules_page() -> Iterator[Any]:
         page = browser.new_page(viewport={"width": 1552, "height": 1253})
         page.emulate_media(reduced_motion="reduce")
         page.goto(SAMPLE.as_uri() + "#coordinates")
+        page.locator('[data-coordinate-id="custom-rules-demo"]').click()
         yield page
         browser.close()
 

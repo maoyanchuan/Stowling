@@ -20,6 +20,7 @@ def scan_page() -> Iterator[Any]:
         page.on("pageerror", lambda error: errors.append(str(error)))
         page.on("request", lambda request: requests.append(request.url))
         page.goto(TEMPLATE.as_uri() + "#coordinates")
+        page.locator('[data-coordinate-id="custom-rules-demo"]').click()
         yield page
         assert errors == []
         assert not any(url.startswith(("http://", "https://")) for url in requests)
@@ -29,6 +30,30 @@ def scan_page() -> Iterator[Any]:
 def choose_mode(page: Any, mode: str) -> None:
     page.locator("#category-setup-trigger").click()
     page.locator(f'#category-setup-menu [data-category-value="{mode}"]').click()
+
+
+def test_pre_scanned_location_opens_with_a_complete_offline_snapshot(scan_page: Any) -> None:
+    page = scan_page
+    page.reload()
+    assert page.locator("#coordinate-name").input_value() == "已扫描分类区（示例）"
+    assert page.locator('[data-coordinate-id="scanned-zone-demo"]').get_attribute(
+        "aria-current",
+    ) == "true"
+    assert page.locator("#category-setup-mode").input_value() == "scan"
+    assert page.locator("#category-scan-map").is_visible()
+    assert page.locator("#category-scan-map").get_attribute("data-stage") == "applied"
+    assert page.locator("#category-scan-preview").is_hidden()
+    assert page.locator(".slice-cell").count() == 60
+    assert "X = 0" in page.locator(".slice-subtitle").inner_text()
+    assert page.locator("#save-coordinate").is_enabled()
+    page.locator('.slice-cell[data-roles="standing"]').click()
+    assert "X 0 / Y 64 / Z 6" in page.locator(".slice-selection").inner_text()
+    page.locator("#save-coordinate").click()
+    page.locator('[data-coordinate-id="home"]').click()
+    page.locator('[data-coordinate-id="scanned-zone-demo"]').click()
+    assert page.locator("#category-scan-map").is_visible()
+    page.reload()
+    assert page.locator("#category-scan-map").get_attribute("data-stage") == "applied"
 
 
 def apply_example(page: Any) -> None:

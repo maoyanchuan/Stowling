@@ -44,6 +44,8 @@ def sample(request: pytest.FixtureRequest) -> Iterator[tuple[Any, dict[str, Any]
         config = SAMPLES[request.param]
         page.goto((ROOT / "docs/ui" / config["file"]).as_uri()
                   + ("#coordinates" if request.param == "coordinate" else "#task"))
+        if request.param == "coordinate":
+            page.locator('[data-coordinate-id="custom-rules-demo"]').click()
         assert errors == []
         yield page, config
         browser.close()

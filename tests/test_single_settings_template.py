@@ -19,6 +19,9 @@ def template_page() -> Iterator[Any]:
         errors: list[str] = []
         page.on("pageerror", lambda error: errors.append(str(error)))
         page.goto(TEMPLATE.as_uri())
+        page.get_by_role("tab", name="坐标", exact=True).click()
+        page.locator('[data-coordinate-id="custom-rules-demo"]').click()
+        page.get_by_role("tab", name="任务", exact=True).click()
         yield page
         assert errors == []
         browser.close()

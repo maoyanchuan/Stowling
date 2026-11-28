@@ -1,6 +1,5 @@
-/* From docs/ui/coordinate-management-standard.html, scoped to the coordinate editor. */
+/* From docs/ui/settings-standard.html, scoped to the coordinate editor. */
 :root body[data-coordinate-editor] {
-    --page-max-width: 1220px;
     --radius: 18px;
 }
 
@@ -695,7 +694,7 @@
 }
 
 :root body[data-coordinate-editor] .editor-form {
-    max-width: 720px;
+    width: 100%;
 }
 
 :root body[data-coordinate-editor] .editor-fields {
@@ -1489,10 +1488,6 @@
 }
 
 @media (max-width: 760px) {
-    :root body[data-coordinate-editor] {
-        --page-gutter: 16px;
-    }
-
     :root body[data-coordinate-editor] .page-header {
         padding: 18px 0;
     }
@@ -1536,10 +1531,6 @@
 }
 
 @media (max-width: 480px) {
-    :root body[data-coordinate-editor] {
-        --page-gutter: 12px;
-    }
-
     :root body[data-coordinate-editor] .page-header {
         align-items: flex-start;
         flex-direction: column;

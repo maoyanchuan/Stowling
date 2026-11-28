@@ -39,6 +39,8 @@ final class MinecraftStorageAccess implements TaskModuleExecutor {
     private final boolean emptyBoxReturn;
     private final MinecraftContainerOpenHand returnHand;
     private final Runnable warehouseConfirmation;
+    private final MinecraftStorageSession session;
+    private boolean sessionStarted;
     private List<ItemStack> contents = List.of();
     private boolean opened;
     private boolean stop;
@@ -60,6 +62,13 @@ final class MinecraftStorageAccess implements TaskModuleExecutor {
             ContainerTarget target, Map<String, Integer> requested, boolean withdraw,
             boolean inspect) {
         this(minecraft, context, target, requested, withdraw, inspect, false);
+    }
+
+    MinecraftStorageAccess(Minecraft minecraft, TaskExecutionContext context,
+            ContainerTarget target, Map<String, Integer> requested, boolean withdraw,
+            boolean inspect, MinecraftStorageSession session) {
+        this(minecraft, context, target, requested, withdraw, inspect, false,
+                null, null, false, session);
     }
 
     static MinecraftStorageAccess collect(Minecraft minecraft, TaskExecutionContext context,
@@ -115,12 +124,22 @@ final class MinecraftStorageAccess implements TaskModuleExecutor {
             boolean inspect, boolean emptyBoxSupply,
             Function<List<ItemStack>, Map<String, Integer>> withdrawalPlan,
             Runnable warehouseConfirmation, boolean emptyBoxReturn) {
+        this(minecraft, context, target, requested, withdraw, inspect, emptyBoxSupply,
+                withdrawalPlan, warehouseConfirmation, emptyBoxReturn, null);
+    }
+
+    private MinecraftStorageAccess(Minecraft minecraft, TaskExecutionContext context,
+            ContainerTarget target, Map<String, Integer> requested, boolean withdraw,
+            boolean inspect, boolean emptyBoxSupply,
+            Function<List<ItemStack>, Map<String, Integer>> withdrawalPlan,
+            Runnable warehouseConfirmation, boolean emptyBoxReturn,
+            MinecraftStorageSession session) {
         this.minecraft = minecraft;
         this.context = context;
         this.target = target;
         this.emptyBoxReturn = emptyBoxReturn;
         this.returnHand = emptyBoxReturn ? new MinecraftContainerOpenHand(minecraft) : null;
-        this.visit = newVisit();
+        this.session = session;
         this.remaining = new LinkedHashMap<>(requested);
         this.requestedBases = itemBases(requested);
         this.withdraw = withdraw;
@@ -129,9 +148,15 @@ final class MinecraftStorageAccess implements TaskModuleExecutor {
         this.withdrawalPlan = withdrawalPlan;
         this.quickWithdrawal = withdrawalPlan != null;
         this.warehouseConfirmation = warehouseConfirmation;
+        this.visit = newVisit();
     }
 
     private MinecraftContainerVisit newVisit() {
+        if (session != null) {
+            return new MinecraftContainerVisit(minecraft, context.navigation(), target,
+                    inspect ? session.hand() : new MinecraftContainerOpenHand(minecraft),
+                    inspect, target.standingArea() == null);
+        }
         return returnHand == null
                 ? new MinecraftContainerVisit(minecraft, context.navigation(), target)
                 : new MinecraftContainerVisit(minecraft, context.navigation(), target, returnHand);
@@ -170,6 +195,10 @@ final class MinecraftStorageAccess implements TaskModuleExecutor {
         }
         if (stop && pendingKey == null) {
             return finish(true, "容器操作已安全停止");
+        }
+        if (session != null && !sessionStarted) {
+            opened = session.begin(target, inspect);
+            sessionStarted = true;
         }
         if (!opened) {
             TaskModuleResult access = visit.tick();
@@ -382,8 +411,15 @@ final class MinecraftStorageAccess implements TaskModuleExecutor {
 
     private TaskModuleResult finish(boolean success, String message) {
         done = true;
-        visit.cancelNavigation();
-        if (minecraft.player != null && minecraft.player.containerMenu.getCarried().isEmpty()) {
+        boolean retain = session != null && success && !stop && session.retain(target);
+        if (retain) {
+            visit.stopNavigation();
+        } else {
+            visit.cancelNavigation();
+            if (session != null) session.close();
+        }
+        if (!retain && minecraft.player != null
+                && minecraft.player.containerMenu.getCarried().isEmpty()) {
             dev.stowling.v2.runtime.TaskTrace.event("CALL", "game.closeContainer",
                     "target=" + target.position() + "; success=" + success, 0, false);
             minecraft.player.closeContainer();

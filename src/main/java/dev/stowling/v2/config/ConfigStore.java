@@ -319,6 +319,7 @@ public final class ConfigStore {
         allowed.add("cachePolicy");
         allowed.add("remainderPolicy");
         allowed.add("robotWarehouseMixedBoxes");
+        allowed.add("continuousContainerAccessEnabled");
         JsonArray definitions = requireArray(value, "autoClassifyTasks");
         for (int index = 0; index < definitions.size(); index++) {
             String path = "autoClassifyTasks[" + index + "]";
@@ -339,6 +340,11 @@ public final class ConfigStore {
             if (mixed != null && (!mixed.isJsonPrimitive()
                     || !mixed.getAsJsonPrimitive().isBoolean())) {
                 throw new V2ValidationException("robotWarehouseMixedBoxes 必须是布尔值");
+            }
+            var continuous = definition.get("continuousContainerAccessEnabled");
+            if (continuous != null && (!continuous.isJsonPrimitive()
+                    || !continuous.getAsJsonPrimitive().isBoolean())) {
+                throw new V2ValidationException("continuousContainerAccessEnabled 必须是布尔值");
             }
             requireCleanupPolicy(definition.get("cleanupPolicy"));
             requireCachePolicy(definition.get("cachePolicy"));

@@ -41,6 +41,32 @@ class ConfigStoreTest {
     Path directory;
 
     @Test
+    void continuousAccessDefaultsOffAndSurvivesSaveReloadAndNormalization() throws Exception {
+        for (boolean enabled : List.of(false, true)) {
+            var json = new Gson().toJsonTree(overflowPackingConfiguration(true, false))
+                    .getAsJsonObject();
+            var definition = json.getAsJsonArray("autoClassifyTasks").get(0).getAsJsonObject();
+            definition.addProperty("continuousContainerAccessEnabled", enabled);
+            var path = directory.resolve("continuous-" + enabled + ".json");
+            Files.writeString(path, json.toString());
+            var store = new ConfigStore(path);
+            var loaded = store.read();
+            assertEquals(enabled, loaded.config().autoClassifyTasks().getFirst()
+                    .continuousContainerAccessEnabled());
+            store.save(loaded.revision(), loaded.config());
+            assertEquals(enabled, new ConfigStore(path).read().config().autoClassifyTasks()
+                    .getFirst().continuousContainerAccessEnabled());
+            definition.remove("continuousContainerAccessEnabled");
+            Files.writeString(path, json.toString());
+            assertFalse(new ConfigStore(path).read().config().autoClassifyTasks().getFirst()
+                    .continuousContainerAccessEnabled());
+            definition.addProperty("continuousContainerAccessEnabled", "true");
+            Files.writeString(path, json.toString());
+            assertThrows(V2ValidationException.class, () -> new ConfigStore(path).read());
+        }
+    }
+
+    @Test
     void overflowPackingSwitchSurvivesDiskSaveAndRestartWithTotalOverflowOnOrOff() {
         for (boolean total : List.of(false, true)) {
             for (boolean pack : List.of(false, true)) {

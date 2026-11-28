@@ -66,6 +66,7 @@
             overflowEnabled: false,
             overflowDestinationRef: "",
             robotWarehouseMixedBoxes: true,
+            continuousContainerAccessEnabled: false,
             remainderPolicy: {...DEFAULT_REMAINDER_POLICY},
             cleanupDestinationRef: "",
             facilities: {},
@@ -108,6 +109,8 @@
             overflowEnabled: item?.overflowEnabled === true,
             overflowDestinationRef: String(item?.overflowDestinationRef || ""),
             robotWarehouseMixedBoxes: item?.robotWarehouseMixedBoxes !== false,
+            continuousContainerAccessEnabled: item?.kind === "CLASSIFICATION"
+                && item?.continuousContainerAccessEnabled === true,
             remainderPolicy: remainderPolicy(item?.remainderPolicy),
             cleanupDestinationRef: item?.cleanupPolicy?.destinationRef === item?.cacheLocationRef
                 ? "" : String(item?.cleanupPolicy?.destinationRef || ""),
@@ -268,6 +271,8 @@
             overflowEnabled: draft.overflowEnabled === true,
             overflowDestinationRef: draft.overflowDestinationRef || "",
             robotWarehouseMixedBoxes: draft.robotWarehouseMixedBoxes !== false,
+            continuousContainerAccessEnabled: draft.kind === "CLASSIFICATION"
+                && draft.continuousContainerAccessEnabled === true,
             remainderPolicy: remainderPolicy(draft.remainderPolicy),
             cleanupPolicy: {...draft.facilities, destinationRef: draft.cleanupDestinationRef || null,
                 resumeMode: "RESTART"},

@@ -1018,3 +1018,23 @@ def test_retired_classification_fields_are_not_sent_or_restored(legacy_value: bo
         return fields.map(field => [Object.hasOwn(saved, field), Object.hasOwn(restored, field)]);
     })()""")
     assert result == [[False, False]] * len(fields)
+
+
+@pytest.mark.parametrize("kind", ["CLASSIFICATION", "PICKUP", "COMBINED"])
+@pytest.mark.parametrize("enabled", [False, True])
+def test_continuous_access_round_trips_only_for_classification(kind: str, enabled: bool) -> None:
+    result = _run("""(() => {
+        const model = window.StowlingAutoClassifyTaskModel;
+        const draft = model.draftFromTask({kind: KIND, cacheLocationRef: "region:source",
+            detection: {coordinateRef: "coordinate:point"},
+            collectionEnabled: KIND !== "CLASSIFICATION", classificationEnabled: KIND !== "PICKUP",
+            collectionPriority: "NORMAL",
+            classificationAreas: [{categoryZoneRef: "category-zone:zone"}],
+            continuousContainerAccessEnabled: ENABLED});
+        const saved = model.payload(draft, {coordinates: [{id: "point"}],
+            regions: [{id: "source"}], categoryZones: [{id: "zone"}]});
+        return [model.newDraft(KIND).continuousContainerAccessEnabled,
+            draft.continuousContainerAccessEnabled, saved.continuousContainerAccessEnabled];
+    })()""".replace("KIND", json.dumps(kind)).replace("ENABLED", json.dumps(enabled)))
+    expected = kind == "CLASSIFICATION" and enabled
+    assert result == [False, expected, expected]

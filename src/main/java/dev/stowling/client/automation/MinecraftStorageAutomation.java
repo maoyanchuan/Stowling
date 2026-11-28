@@ -163,7 +163,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
 
         PlainClassificationDeposit(TaskExecutionContext context, ContainerTarget target,
                 Map<String, Integer> items) {
-            super(context);
+            super(context, null, true);
             this.target = target;
             this.items = Map.copyOf(items);
         }
@@ -670,15 +670,24 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         TaskModuleResult terminal;
         final Map<BlockPosition, CacheSnapshot> cacheSnapshots;
         private boolean initialized;
+        private final MinecraftStorageSession containerSession;
 
         Session(TaskExecutionContext context) {
             this(context, null);
         }
 
         Session(TaskExecutionContext context, Map<BlockPosition, CacheSnapshot> cacheSnapshots) {
+            this(context, cacheSnapshots, false);
+        }
+
+        Session(TaskExecutionContext context, Map<BlockPosition, CacheSnapshot> cacheSnapshots,
+                boolean continuousAccess) {
             this.context = context;
             this.configuration = taskStorage(context);
             this.cacheSnapshots = cacheSnapshots;
+            containerSession = continuousAccess
+                    && context.workspace().continuousContainerAccessEnabled()
+                    ? new MinecraftStorageSession(minecraft) : null;
         }
 
         abstract void initialize();
@@ -700,6 +709,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                 initialize();
                 return tick();
             } catch (RuntimeException exception) {
+                closeContainerSession();
                 terminal = TaskModuleResult.failed(exception.getMessage());
                 return terminal;
             }
@@ -713,14 +723,19 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
             }
             try {
                 if (stopping && safeToStop()) {
+                    closeContainerSession();
                     return TaskModuleResult.succeeded("操作已确认，交给全局收尾");
                 }
                 if (current == null) {
                     current = steps.pollFirst();
                     if (current == null) {
+                        closeContainerSession();
                         terminal = TaskModuleResult.succeeded(completionMessage());
                         return terminal;
                     }
+                }
+                if (!(current.action instanceof MinecraftStorageAccess)) {
+                    closeContainerSession();
                 }
                 TaskModuleResult result = current.action.tick();
                 if (result.state() == TaskModuleState.SUCCEEDED) {
@@ -741,10 +756,12 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                         failed.run();
                         return TaskModuleResult.waiting("正在尝试下一个可用暂存箱");
                     }
+                    closeContainerSession();
                     terminal = result;
                 }
                 return result;
             } catch (RuntimeException exception) {
+                closeContainerSession();
                 terminal = TaskModuleResult.failed("储存操作失败：" + exception.getMessage());
                 return terminal;
             }
@@ -767,13 +784,17 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
             if (inPackingPlan) cacheSnapshots.put(target.position(), snapshot);
         }
 
+        private void closeContainerSession() {
+            if (containerSession != null) containerSession.close();
+        }
+
         final void read(ContainerTarget target, Consumer<List<ItemStack>> after) {
             read(target, after, null);
         }
 
         final void read(ContainerTarget target, Consumer<List<ItemStack>> after, Runnable failed) {
             MinecraftStorageAccess access = new MinecraftStorageAccess(minecraft, context,
-                    target, Map.of(), false, true);
+                    target, Map.of(), false, true, containerSession);
             steps.add(new Step(access, () -> after.accept(access.contents()), failed));
         }
 
@@ -798,7 +819,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                 return;
             }
             MinecraftStorageAccess access = new MinecraftStorageAccess(minecraft, context,
-                    target, items, withdraw, false);
+                    target, items, withdraw, false, containerSession);
             steps.add(new Step(access, () -> after.accept(access.contents())));
         }
 
@@ -1185,6 +1206,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
             if (current != null) {
                 current.action.cancel();
             }
+            if (safeToStop()) closeContainerSession();
         }
     }
 
@@ -1953,7 +1975,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         private int scanned;
 
         CacheInventoryScan(TaskExecutionContext context, List<ContainerTarget> containers) {
-            super(context);
+            super(context, null, true);
             visits = new ContainerVisitPlan(containers);
         }
 
@@ -1997,10 +2019,11 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         private int looseDeficit;
         private int existingBoxSpace;
         private CachePackingBatchPlan plan;
+        private boolean directBatchAttempted;
 
         CachePackingBatch(TaskExecutionContext context, ContainerTarget cache, String category,
                 ContainerTarget destination) {
-            super(context, new LinkedHashMap<>());
+            super(context, new LinkedHashMap<>(), true);
             initialCache = cache;
             this.category = category;
             this.destination = destination;
@@ -2167,6 +2190,10 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
         }
 
         private void prepareRound() {
+            if (!directBatchAttempted && context.workspace().continuousContainerAccessEnabled()) {
+                directBatchAttempted = true;
+                if (prepareDirectLooseBatch()) return;
+            }
             int fullBoxes = fullCount();
             List<ItemStack> stock = snapshots();
             List<ItemStack> partials = stock.stream().filter(MinecraftItemIdentity::isBox)
@@ -2235,6 +2262,67 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
 
         private void prepareReservedLoose() {
             gather(0);
+        }
+
+        private boolean prepareDirectLooseBatch() {
+            Map<ContainerTarget, Map<String, Integer>> stock = new LinkedHashMap<>();
+            Map<String, Integer> sizes = new LinkedHashMap<>();
+            Set<String> categories = new LinkedHashSet<>();
+            for (ContainerTarget source : sources) {
+                CacheSnapshot snapshot = cacheSnapshots.get(source.position());
+                Set<String> keys = context.workspace().mixedBoxWithdrawalItems(source,
+                        snapshot.counts().keySet());
+                Map<String, Integer> items = new LinkedHashMap<>();
+                snapshot.counts().forEach((key, count) -> {
+                    if (keys.contains(key)) {
+                        items.put(key, count);
+                        categories.add(ItemIdentity.category(key));
+                    }
+                });
+                stock.put(source, items);
+                sizes.putAll(snapshot.stackSizes());
+            }
+            Map<String, Integer> limits = new LinkedHashMap<>();
+            String firstCategory = category;
+            ContainerTarget firstDestination = destination;
+            StoragePolicy firstPolicy = policy;
+            int firstStackSize = stackSize;
+            try {
+                for (String next : categories) {
+                    List<ContainerTarget> targets = context.workspace().classificationTargets(next);
+                    if (targets.isEmpty()) return false;
+                    category = next;
+                    destination = targets.getFirst();
+                    policy = destination.storagePolicy();
+                    stackSize = sizes.entrySet().stream().filter(entry ->
+                            next.equals(ItemIdentity.category(entry.getKey())))
+                            .mapToInt(Map.Entry::getValue).findFirst().orElse(64);
+                    if (policy.mode() == StorageMode.BOX_ONLY || recordedBoxSpace() > 0) return false;
+                    limits.put(next, policy.mode() == StorageMode.NORMAL ? Integer.MAX_VALUE
+                            : Math.max(0, targetLooseDeficit() - sum(rawOwned())));
+                }
+            } finally {
+                category = firstCategory;
+                destination = firstDestination;
+                policy = firstPolicy;
+                stackSize = firstStackSize;
+            }
+            var inventory = inventoryStacks().stream().map(stack ->
+                    new ShulkerTransferPlanner.Slot(MinecraftItemIdentity.key(stack),
+                            stack.getCount(), stack.getMaxStackSize())).toList();
+            var planned = dev.stowling.automation.ClassificationLooseBatchPlan.plan(stock, limits,
+                    inventory, minecraft.player.getInventory().getNonEquipmentItems().size()
+                            - RESERVED_INVENTORY_SLOTS, sizes, remainingBatchSlots());
+            if (planned.isEmpty()) return false;
+            preparedCategories.addAll(categories);
+            gatherDirectLoose(new ArrayDeque<>(planned.entrySet()));
+            return true;
+        }
+
+        private void gatherDirectLoose(Deque<Map.Entry<ContainerTarget, Map<String, Integer>>> plan) {
+            var next = plan.pollFirst();
+            if (next == null) return;
+            transfer(next.getKey(), next.getValue(), true, () -> gatherDirectLoose(plan));
         }
 
         private int rawDeliveryLimit() {
@@ -2511,7 +2599,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
                 Map<BlockPosition, CacheSnapshot> snapshots,
                 List<ContainerTarget> packingSources, Map<String, Integer> packingLoad,
                 Map<String, Integer> loosePackingStock) {
-            super(context, snapshots);
+            super(context, snapshots, true);
             this.cache = cache;
             this.packingCategory = category;
             this.keeperSource = keeperSource;
@@ -2904,7 +2992,7 @@ public final class MinecraftStorageAutomation implements StorageAutomationPort {
 
         Packing(TaskExecutionContext context, ContainerTarget target, Map<String, Integer> items,
                 ItemStack plannedKeeper, Map<BlockPosition, CacheSnapshot> snapshots) {
-            super(context, snapshots);
+            super(context, snapshots, true);
             this.cacheStaging = snapshots != null;
             this.plannedKeeper = plannedKeeper;
             this.target = target;

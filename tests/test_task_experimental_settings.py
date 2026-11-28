@@ -57,6 +57,15 @@ def test_merged_classification_controls_are_removed() -> None:
         assert control not in page.attrs
 
 
+def test_continuous_access_uses_the_standard_footer_with_an_independent_switch() -> None:
+    page = markup(WEB / "tasks.html")
+    control = "auto-continuous-container-access"
+    assert "auto-experiments-body" in page.parents[control]
+    assert page.attrs[control]["role"] == "switch"
+    assert "checked" not in page.attrs[control]
+    assert page.attrs[control]["aria-describedby"] == "auto-continuous-access-help"
+
+
 def test_total_overflow_packing_is_a_regular_remainder_setting() -> None:
     page = markup(WEB / "tasks.html")
     control = "auto-overflow-packing-enabled"

@@ -19,6 +19,7 @@ import java.util.UUID;
 
 public final class TaskRunWorkspace {
     private boolean classificationTask;
+    private boolean continuousContainerAccessEnabled;
     private boolean classificationDeliveryActive;
 
     private Set<String> classificationDemand = Set.of();
@@ -28,6 +29,14 @@ public final class TaskRunWorkspace {
     /** Identifies an independent classification run, never a persisted execution switch. */
     public synchronized void configureClassificationTask(boolean classification) {
         classificationTask = classification;
+    }
+
+    public synchronized void configureContinuousContainerAccess(boolean enabled) {
+        continuousContainerAccessEnabled = classificationTask && enabled;
+    }
+
+    public synchronized boolean continuousContainerAccessEnabled() {
+        return classificationTask && continuousContainerAccessEnabled;
     }
 
     public synchronized boolean classificationTask() {

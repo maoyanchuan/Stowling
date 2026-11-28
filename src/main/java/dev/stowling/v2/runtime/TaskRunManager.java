@@ -1399,6 +1399,8 @@ public final class TaskRunManager {
         PreparedRun prepared = queued.prepared;
         workspace.configureClassificationTask(prepared.taskSettings != null
                 && prepared.taskSettings.kind() == AutoClassifyDefinition.Kind.CLASSIFICATION);
+        workspace.configureContinuousContainerAccess(prepared.taskSettings != null
+                && Boolean.TRUE.equals(prepared.taskSettings.continuousContainerAccessEnabled()));
         diagnostics.captureContext(running.runId(), new TaskDiagnosticContext(clock.instant(),
                 diagnosticVersions, running, prepared.task, prepared.interruptionTask,
                 prepared.taskSettings, diagnosticStorageSettings.get(),

@@ -18,9 +18,63 @@ def test_merged_standing_has_no_experimental_controls_or_badges(classification_p
             window.StowlingTaskDebugMode = {enabled: () => shown};
             document.dispatchEvent(new CustomEvent('stowling:task-debug-mode-changed'));
         }""", shown)
-        assert page.locator("#auto-experiments-settings").is_hidden()
+        assert page.locator("#auto-experiments-settings").is_visible() is shown
         assert page.locator("#auto-standing-subregions").count() == 0
         assert page.locator("#auto-standing-active").count() == 0
+
+
+@pytest.mark.parametrize("theme,width", [("green", 1000), ("gray", 1000), ("green", 390)])
+def test_continuous_access_saves_and_stays_visible_when_debug_is_hidden(
+    classification_page: Any, theme: str, width: int,
+) -> None:
+    page = classification_page
+    page.set_viewport_size({"width": width, "height": 1000})
+    page.evaluate("theme => document.documentElement.dataset.theme = theme", theme)
+    open_settings(page)
+    toggle = page.locator("#auto-continuous-container-access")
+    assert toggle.is_hidden()
+    page.evaluate("""() => {
+        window.StowlingTaskDebugMode = {enabled: () => true};
+        document.dispatchEvent(new CustomEvent('stowling:task-debug-mode-changed'));
+    }""")
+    assert page.locator("#auto-experiments-toggle").get_attribute("aria-expanded") == "false"
+    page.locator("#auto-experiments-toggle").click()
+    settle(page)
+    assert not toggle.is_checked()
+    bounds = toggle.bounding_box()
+    assert bounds is not None and (bounds["width"], bounds["height"]) == (56, 32)
+    title = page.locator("label:has(#auto-continuous-container-access) strong")
+    assert title.evaluate("node => getComputedStyle(node).fontWeight") == "400"
+    toggle.press("Space")
+    page.wait_for_function("backend.item.continuousContainerAccessEnabled === true")
+    assert not page.locator("#auto-task-list .pickup-task-header").get_by_role(
+        "switch"
+    ).is_checked()
+    page.evaluate("""() => {
+        window.StowlingTaskDebugMode = {enabled: () => false};
+        document.dispatchEvent(new CustomEvent('stowling:task-debug-mode-changed'));
+    }""")
+    assert toggle.is_hidden()
+    assert page.locator("#auto-experiments-settings").evaluate("el => el.inert")
+    page.locator("#auto-task-list .pickup-task-expand").click()
+    settle(page)
+    assert page.get_by_text(
+        "生效：扫描与存取连续访问（classification-continuous-container-access）", exact=True
+    ).is_visible()
+    assert page.evaluate("backend.item.continuousContainerAccessEnabled") is True
+    assert not page.evaluate("backend.requests.some(r => r.path.includes('/run'))")
+    page.locator("#refresh-move-tasks").click()
+    page.wait_for_function("!document.querySelector('#refresh-move-tasks').disabled")
+    open_settings(page)
+    page.evaluate("""() => {
+        window.StowlingTaskDebugMode = {enabled: () => true};
+        document.dispatchEvent(new CustomEvent('stowling:task-debug-mode-changed'));
+    }""")
+    if page.locator("#auto-experiments-toggle").get_attribute("aria-expanded") == "false":
+        page.locator("#auto-experiments-toggle").click()
+    settle(page)
+    assert toggle.is_checked()
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
 
 
 @pytest.fixture
@@ -142,7 +196,7 @@ def test_total_overflow_packing_is_regular_and_keeps_saved_values(
         window.StowlingTaskDebugMode = {enabled: () => true};
         document.dispatchEvent(new Event('stowling:task-debug-mode-changed'));
     }""")
-    assert menu.is_hidden() and menu.evaluate("node => node.inert")
+    assert menu.is_visible() and not menu.evaluate("node => node.inert")
     page.locator("#auto-overflow-toggle").press("Space")
     settle(page)
     assert toggle.is_hidden() and toggle.is_disabled()

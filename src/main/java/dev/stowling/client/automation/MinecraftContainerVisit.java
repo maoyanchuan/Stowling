@@ -140,7 +140,11 @@ final class MinecraftContainerVisit {
     }
 
     void cancelNavigation() {
-        approach.cancel();
+        stopNavigation();
         hand.restore();
+    }
+
+    void stopNavigation() {
+        approach.cancel();
     }
 }

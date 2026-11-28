@@ -332,7 +332,7 @@ def test_split_builtin_double_survives_apply_save_and_reload_selection(scan_page
 
 @pytest.mark.parametrize(
     ("label", "kind"),
-    [("木桶", "barrel"), ("下半砖", "slab"), ("楼梯", "stairs"),
+    [("木桶", "barrel"), ("半砖", "slab"), ("楼梯", "stairs"),
      ("玻璃", "glass"), ("黑紫块", "checker"), ("石英块", "quartz")],
 )
 def test_palette_places_selected_block_at_clicked_cell(
@@ -368,7 +368,7 @@ def test_palette_drag_rotates_stairs_and_preserves_orientation(scan_page: Any) -
     cell = bounds["width"] / int(grid.get_attribute("width")) * 26
     palette = page.locator('.classic-palette [data-block="stairs"]')
     palette.drag_to(grid, target_position={"x": cell / 2, "y": cell / 2})
-    stairs = page.locator('.classic-board [data-kind="stairs"]')
+    stairs = page.locator('.classic-board [data-kind="stairs"]:visible')
     assert stairs.count() == 1
     palette.drag_to(stairs)
     assert stairs.count() == 1
@@ -405,3 +405,41 @@ def test_delete_existing_glass_restores_on_undo_and_survives_save(scan_page: Any
     page.locator('[data-coordinate-id="home"]').click()
     page.locator('[data-coordinate-id="scanned-zone-demo"]').click()
     assert glass.count() == 2
+
+
+def test_default_quartz_stairs_face_the_glass(scan_page: Any) -> None:
+    page = scan_page
+    page.locator('[data-coordinate-id="scanned-zone-demo"]').click()
+    stairs = page.locator('.classic-board [data-kind="stairs"]')
+    assert stairs.count() == 2
+    assert page.locator('.classic-board [data-kind="low"]').count() == 0
+    for x, angle in [(5, 0), (9, 90)]:
+        leg = page.locator(f'[data-kind="stairs"][transform="translate({x * 26} 182)"]')
+        assert leg.locator("use").get_attribute("transform") == f"rotate({angle} 13 13)"
+    for x in (6, 7, 8):
+        glass = page.locator(f'[data-kind="glass"][transform="translate({x * 26} 182)"]')
+        assert glass.count() == 1
+
+
+def test_slab_toggles_in_place_and_keeps_upper_half_after_save(scan_page: Any) -> None:
+    page = scan_page
+    page.locator('[data-coordinate-id="scanned-zone-demo"]').click()
+    page.get_by_role("button", name="半砖", exact=True).click()
+    page.locator(".classic-grid").press("Enter")
+    slab = page.locator('.classic-board [data-kind="slab"]')
+    art = slab.locator("use")
+    cell = slab.get_attribute("transform")
+    assert art.get_attribute("y") == "0"
+    slab.click(button="right")
+    assert art.get_attribute("y") == "-13"
+    assert slab.get_attribute("transform") == cell
+    slab.click(button="right")
+    assert art.get_attribute("y") == "0"
+    page.locator(".classic-undo").click()
+    assert "上半砖" in slab.get_attribute("aria-label")
+    slab.press("ArrowRight")
+    assert slab.get_attribute("transform") != cell
+    page.locator("#save-coordinate").click()
+    page.locator('[data-coordinate-id="home"]').click()
+    page.locator('[data-coordinate-id="scanned-zone-demo"]').click()
+    assert art.get_attribute("y") == "-13"

@@ -3,11 +3,11 @@
 
     const unit = 26;
     const names = {chest: "双箱", single: "小箱子",
-        barrel: "木桶", slab: "下半砖", stairs: "楼梯", checker: "黑紫块",
-        glass: "玻璃", quartz: "石英块", low: "低矮构件"};
+        barrel: "木桶", slab: "半砖", stairs: "楼梯", checker: "黑紫块",
+        glass: "玻璃", quartz: "石英块"};
     const directions = {ArrowLeft: [-1, 0], ArrowRight: [1, 0],
         ArrowUp: [0, -1], ArrowDown: [0, 1]};
-    const hint = "从侧栏拖到空格放置，点选方块可删除。右键楼梯旋转，右键双箱拆分。";
+    const hint = "从侧栏拖到空格放置，点选方块可删除。右键可旋转楼梯、切换半砖上下位置或拆分双箱。";
 
     /** @param {string} tag @param {object} attrs @returns {SVGElement} */
     function svgElement(tag, attrs) {
@@ -56,9 +56,10 @@
         let drag = null;
         let locked = true;
 
-        /** @param {string} kind @param {number} x @param {number} y @returns {void} */
-        function add(kind, x, y) {
-            defaults.set(kind + "-" + defaults.size, {kind, x, y});
+        /** @param {string} kind @param {number} x @param {number} y
+         * @param {number} [turns] @returns {void} */
+        function add(kind, x, y, turns = 0) {
+            defaults.set(kind + "-" + defaults.size, {kind, x, y, turns});
         }
 
         /** @param {string} id @returns {object} */
@@ -73,18 +74,22 @@
         }
         const side = [["checker", 3, 0], ["chest", 4, 0], ["chest", 1, 1],
             ["checker", 2, 2], ["chest", 0, 3], ["checker", 1, 4], ["chest", 0, 5],
-            ["checker", 0, 6], ["chest", 1, 7], ["checker", 3, 7], ["low", 4, 6]];
+            ["checker", 0, 6], ["chest", 1, 7], ["checker", 3, 7]];
         for (const [kind, x, y] of side) {
             add(kind, x + 1, y + 1);
             add(kind, 14 - x - (kind === "chest" ? 2 : 1), y + 1);
         }
+        add("stairs", 5, 7);
+        add("stairs", 9, 7, 1);
         for (let x = 6; x <= 8; x++) add("glass", x, 7);
 
         /** @param {object} piece @param {number} x @param {number} y @returns {string} */
         function coordinates(piece, x, y) {
             const z = origin.z + x;
             const range = piece.width > 1 ? `${z}…${z + piece.width - 1}` : String(z);
-            return `${names[piece.kind]} · X ${origin.x} / Y ${origin.y - y} / Z ${range}`;
+            const label = piece.kind === "slab"
+                ? (piece.upper ? "上半砖" : "下半砖") : names[piece.kind];
+            return `${label} · X ${origin.x} / Y ${origin.y - y} / Z ${range}`;
         }
 
         /** @param {object} piece @param {number} x @param {number} y @returns {boolean} */
@@ -105,7 +110,8 @@
         /** @param {object} next @param {string} id @param {object} value @returns {void} */
         function put(next, id, value) {
             const base = defaults.get(id);
-            if (base && base.kind === value.kind && base.x === value.x && base.y === value.y) {
+            if (base && base.kind === value.kind && base.x === value.x && base.y === value.y
+                    && base.turns === (value.turns || 0)) {
                 delete next[id];
             } else {
                 next[id] = value;
@@ -153,6 +159,7 @@
             }
             const value = {kind, x, y};
             if (kind === "stairs") value.turns = pieces.get(id)?.turns || 0;
+            if (kind === "slab") value.upper = Boolean(pieces.get(id)?.upper);
             put(next, id, value);
             apply(next, id);
         }
@@ -180,16 +187,25 @@
 
         /** @param {object} piece @param {Event} event @returns {void} */
         function secondary(piece, event) {
-            if (locked || drag || paletteDrag || !["chest", "stairs"].includes(piece.kind)) return;
+            if (locked || drag || paletteDrag) return;
+            if (!["chest", "stairs", "slab"].includes(piece.kind)) return;
             event.preventDefault();
             if (piece.kind === "chest") {
                 split(piece);
                 return;
             }
             const {id, kind, x, y} = piece;
-            const turns = (piece.turns + 1) % 4;
-            apply({...positions, [id]: {kind, x, y, turns}}, id);
-            feedback.textContent = `楼梯朝向已旋转至 ${turns * 90}°。`;
+            const next = {...positions};
+            if (kind === "slab") {
+                put(next, id, {kind, x, y, upper: !piece.upper});
+                apply(next, id);
+                feedback.textContent = piece.upper ? "已切换为上半砖。" : "已切换为下半砖。";
+            } else {
+                const turns = (piece.turns + 1) % 4;
+                put(next, id, {kind, x, y, turns});
+                apply(next, id);
+                feedback.textContent = `楼梯朝向已旋转至 ${turns * 90}°。`;
+            }
         }
 
         /** @returns {void} */
@@ -470,6 +486,7 @@
                 pieces.set(id, piece);
                 Object.assign(piece, value);
                 piece.turns = value.turns || 0;
+                piece.upper = Boolean(value.upper);
                 piece.width = piece.kind === "chest" ? 2 : 1;
                 const {x, y, width, kind, node} = piece;
                 const art = node.firstElementChild;
@@ -480,7 +497,7 @@
                 }
                 art.setAttribute("href", "#" + kind);
                 art.setAttribute("x", kind === "chest" ? 2 : 0);
-                art.setAttribute("y", kind === "low" ? 13 : 0);
+                art.setAttribute("y", kind === "slab" && piece.upper ? -unit / 2 : 0);
                 node.lastElementChild.setAttribute("width", width * unit);
                 node.dataset.kind = kind;
                 piece.visible = x >= 0 && y >= 0 && x + width <= columns && y < rows;

@@ -7,21 +7,6 @@
     display: none;
 }
 
-:root body[data-coordinate-editor] .workspace {
-    display: block;
-    margin-top: 0;
-}
-
-:root body[data-coordinate-editor] .workspace[aria-hidden="true"] {
-    display: none;
-}
-
-:root body[data-coordinate-editor] .workspace-nav {
-    position: relative;
-    top: auto;
-    margin-bottom: 24px;
-}
-
 :root body[data-coordinate-editor] .coordinate-shell [hidden] {
     display: none !important;
 }
@@ -42,34 +27,33 @@
     color: var(--text);
     background: var(--theme-page, var(--bg));
     font-family: Inter, "Segoe UI", "Microsoft YaHei UI", system-ui, sans-serif;
-    line-height: 1.5;
 }
 
-:root body[data-coordinate-editor] button,
-:root body[data-coordinate-editor] input,
-:root body[data-coordinate-editor] select,
-:root body[data-coordinate-editor] textarea {
+:root body[data-coordinate-editor] :where(.coordinate-shell) button,
+:root body[data-coordinate-editor] :where(.coordinate-shell) input,
+:root body[data-coordinate-editor] :where(.coordinate-shell) select,
+:root body[data-coordinate-editor] :where(.coordinate-shell) textarea {
     font: inherit;
 }
 
-:root body[data-coordinate-editor] button,
-:root body[data-coordinate-editor] input,
-:root body[data-coordinate-editor] select {
+:root body[data-coordinate-editor] :where(.coordinate-shell) button,
+:root body[data-coordinate-editor] :where(.coordinate-shell) input,
+:root body[data-coordinate-editor] :where(.coordinate-shell) select {
     cursor: pointer;
 }
 
-:root body[data-coordinate-editor] button:focus-visible,
-:root body[data-coordinate-editor] input:focus-visible,
-:root body[data-coordinate-editor] select:focus-visible,
-:root body[data-coordinate-editor] textarea:focus-visible {
+:root body[data-coordinate-editor] :where(.coordinate-shell) button:focus-visible,
+:root body[data-coordinate-editor] :where(.coordinate-shell) input:focus-visible,
+:root body[data-coordinate-editor] :where(.coordinate-shell) select:focus-visible,
+:root body[data-coordinate-editor] :where(.coordinate-shell) textarea:focus-visible {
     outline: 2px solid var(--theme-focus, #a6bbb0);
     outline-offset: 3px;
 }
 
-:root body[data-coordinate-editor] button:disabled,
-:root body[data-coordinate-editor] input:disabled,
-:root body[data-coordinate-editor] select:disabled,
-:root body[data-coordinate-editor] textarea:disabled {
+:root body[data-coordinate-editor] :where(.coordinate-shell) button:disabled,
+:root body[data-coordinate-editor] :where(.coordinate-shell) input:disabled,
+:root body[data-coordinate-editor] :where(.coordinate-shell) select:disabled,
+:root body[data-coordinate-editor] :where(.coordinate-shell) textarea:disabled {
     cursor: not-allowed;
     opacity: 0.55;
 }
@@ -79,99 +63,8 @@
     background: var(--accent-soft);
 }
 
-:root body[data-coordinate-editor] .page-header,
-:root body[data-coordinate-editor] .page-main {
-    width: min(var(--page-max-width), calc(100% - 2 * var(--page-gutter)));
-    margin: 0 auto;
-}
-
-:root body[data-coordinate-editor] .page-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 20px;
-    padding: 22px 0;
-    border-bottom: 1px solid var(--line);
-}
-
-:root body[data-coordinate-editor] .page-brand {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-}
-
-:root body[data-coordinate-editor] .brand-mark {
-    display: grid;
-    place-items: center;
-    width: 36px;
-    height: 36px;
-    border-radius: 10px;
-    color: #ffffff;
-    background: var(--accent);
-}
-
-:root body[data-coordinate-editor] .brand-mark svg {
-    width: 21px;
-    height: 21px;
-}
-
-:root body[data-coordinate-editor] .page-brand strong {
-    display: block;
-    font-size: 17px;
-    font-weight: 650;
-}
-
-:root body[data-coordinate-editor] .page-brand span {
-    color: var(--muted);
-    font-size: 13px;
-}
-
-:root body[data-coordinate-editor] .theme-picker {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    padding: 4px;
-    border: 1px solid var(--line);
-    border-radius: 10px;
-    background: var(--theme-subtle, #1a1b1e);
-}
-
-:root body[data-coordinate-editor] .theme-picker button {
-    min-height: 36px;
-    padding: 6px 12px;
-    border: 0;
-    border-radius: 6px;
-    color: var(--muted);
-    background: transparent;
-}
-
-:root body[data-coordinate-editor] .theme-picker button[aria-pressed="true"] {
-    color: var(--theme-selected-text, #f1f1f3);
-    background: var(--theme-selected, #3b3d44);
-}
-
-:root body[data-coordinate-editor] .page-main {
-    padding: 30px 0 48px;
-}
-
-:root body[data-coordinate-editor] .page-heading {
-    margin-bottom: 22px;
-}
-
-:root body[data-coordinate-editor] .page-heading h1 {
-    margin: 0;
-    font-size: 24px;
-    font-weight: 650;
-}
-
-:root body[data-coordinate-editor] .page-heading p {
-    max-width: 65ch;
-    margin: 6px 0 0;
-    color: var(--muted);
-    font-size: 14px;
-}
-
 :root body[data-coordinate-editor] .coordinate-shell {
+    line-height: 1.5;
     display: grid;
     grid-template-columns: minmax(230px, 290px) minmax(0, 1fr);
     overflow: visible;
@@ -385,7 +278,7 @@
     gap: 8px;
 }
 
-:root body[data-coordinate-editor] button {
+:root body[data-coordinate-editor] :where(.coordinate-shell) button {
     min-height: 40px;
     padding: 8px 14px;
     border: 1px solid var(--line);
@@ -394,23 +287,23 @@
     background: var(--theme-surface, var(--panel-solid));
 }
 
-:root body[data-coordinate-editor] button:hover:not(:disabled) {
+:root body[data-coordinate-editor] :where(.coordinate-shell) button:hover:not(:disabled) {
     border-color: var(--accent);
 }
 
-:root body[data-coordinate-editor] button.primary {
+:root body[data-coordinate-editor] :where(.coordinate-shell) button.primary {
     border-color: var(--accent);
     color: var(--theme-primary-text, #17221c);
     background: var(--accent);
 }
 
-:root body[data-coordinate-editor] button.ghost {
+:root body[data-coordinate-editor] :where(.coordinate-shell) button.ghost {
     border-color: transparent;
     color: var(--theme-selected-text, var(--text));
     background: transparent;
 }
 
-:root body[data-coordinate-editor] button.danger {
+:root body[data-coordinate-editor] :where(.coordinate-shell) button.danger {
     color: var(--danger);
 }
 
@@ -441,9 +334,9 @@
     font-size: 13px;
 }
 
-:root body[data-coordinate-editor] input,
-:root body[data-coordinate-editor] select,
-:root body[data-coordinate-editor] textarea {
+:root body[data-coordinate-editor] :where(.coordinate-shell) input,
+:root body[data-coordinate-editor] :where(.coordinate-shell) select,
+:root body[data-coordinate-editor] :where(.coordinate-shell) textarea {
     width: 100%;
     min-height: 42px;
     padding: 8px 12px;
@@ -1488,14 +1381,6 @@
 }
 
 @media (max-width: 760px) {
-    :root body[data-coordinate-editor] .page-header {
-        padding: 18px 0;
-    }
-
-    :root body[data-coordinate-editor] .page-main {
-        padding-top: 22px;
-    }
-
     :root body[data-coordinate-editor] .coordinate-shell {
         grid-template-columns: minmax(0, 1fr);
     }
@@ -1531,19 +1416,6 @@
 }
 
 @media (max-width: 480px) {
-    :root body[data-coordinate-editor] .page-header {
-        align-items: flex-start;
-        flex-direction: column;
-    }
-
-    :root body[data-coordinate-editor] .theme-picker {
-        width: 100%;
-    }
-
-    :root body[data-coordinate-editor] .theme-picker button {
-        flex: 1;
-    }
-
     :root body[data-coordinate-editor] .coordinate-column {
         padding: 18px;
     }

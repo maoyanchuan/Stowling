@@ -521,11 +521,6 @@ def test_pages_share_console_heading_with_contextual_subtitles() -> None:
     )
     for name, label in pages:
         html = read(name)
-        if name == "coordinates.html":
-            header = html.split('<header class="page-header">', 1)[1].split("</header>", 1)[0]
-            assert "<strong>Stowling 控制台</strong>" in header
-            assert "<span>坐标管理</span>" in header
-            continue
         header = html.split('<header class="topbar">', 1)[1].split("</header>", 1)[0]
         assert "<h1>Stowling 控制台</h1>" in header
         assert f"<p>{label} · " in header
@@ -535,10 +530,6 @@ def test_pages_share_console_heading_with_contextual_subtitles() -> None:
 def test_console_pages_use_the_packaged_brand_icon() -> None:
     for path in sorted(WEB.glob("*.html")):
         html = read(path.name)
-        if path.name == "coordinates.html":
-            assert 'class="brand-mark" aria-hidden="true"' in html
-            assert '<link rel="icon" type="image/png" href="/icon.png">' in html
-            continue
         header = html.split('<header class="topbar">', 1)[1].split("</header>", 1)[0]
         assert '<link rel="icon" type="image/png" href="/icon.png">' in html
         assert '<img class="brand-mark" src="/icon.png"' in header

@@ -1849,21 +1849,6 @@
         }, `${kindLabel(coordinate.kind)}已删除。`);
     }
 
-    /** @param {string} theme @param {boolean} [persist] @returns {void} */
-    function setTheme(theme, persist = false) {
-        const selected = theme === "gray" ? "gray" : "green";
-        document.documentElement.dataset.theme = selected;
-        document.querySelectorAll("[data-theme-choice]").forEach(button => {
-            button.setAttribute("aria-pressed", String(button.dataset.themeChoice === selected));
-        });
-        if (!persist) return;
-        try {
-            window.localStorage.setItem("stowling.theme", selected);
-        } catch {
-            // Theme switching remains available when storage is unavailable.
-        }
-    }
-
     /** @returns {boolean} */
     function leaveEditor() {
         if (busy) return false;
@@ -2207,17 +2192,6 @@
     });
     nodes.duplicate.addEventListener("click", duplicateCoordinate);
     nodes.remove.addEventListener("click", deleteCoordinate);
-    document.querySelectorAll("[data-theme-choice]").forEach(button => {
-        button.addEventListener("click", () => setTheme(button.dataset.themeChoice, true));
-    });
-
-    let savedTheme = document.documentElement.dataset.theme;
-    try {
-        savedTheme = window.localStorage.getItem("stowling.theme") || savedTheme;
-    } catch {
-        // The standalone preview works without local storage.
-    }
-    setTheme(savedTheme);
     nodes.radius.required = false;
     S.bindCoordinateInputs(nodes.x, nodes.y, nodes.z);
     for (const fields of [nodes.region, nodes.categoryOverall]) {

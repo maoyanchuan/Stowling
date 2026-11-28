@@ -16,27 +16,13 @@
     <script src="/coordinate-editor.js" defer></script>
 </head>
 <body data-page="coordinates" data-coordinate-editor>
-    <header class="page-header">
-        <div class="page-brand">
-            <span class="brand-mark" aria-hidden="true">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                     stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M12 21s7-6.1 7-12a7 7 0 1 0-14 0c0 5.9 7 12 7 12Z"/>
-                    <circle cx="12" cy="9" r="2.2"/>
-                </svg>
-            </span>
+    <header class="topbar">
+        <div class="brand">
+            <img class="brand-mark" src="/icon.png" width="36" height="36" alt="">
             <div>
-                <strong>Stowling 控制台</strong>
-                <span>坐标管理</span>
+                <h1>Stowling 控制台</h1>
+                <p>坐标管理 · 坐标点、区域与分类区</p>
             </div>
-        </div>
-        <div class="theme-picker" aria-label="主题切换">
-            <button type="button" data-theme-choice="green" aria-pressed="true">
-                浅绿
-            </button>
-            <button type="button" data-theme-choice="gray" aria-pressed="false">
-                深灰
-            </button>
         </div>
         <div class="connection-state">
             <span id="connection-dot" class="status-dot offline" aria-hidden="true"></span>
@@ -44,16 +30,12 @@
         </div>
     </header>
 
-    <main class="page-main">
+    <main>
         <div id="auth-shell">
             <p class="route-loading" role="status">正在载入控制台…</p>
         </div>
-        <div id="workspace" class="workspace" aria-hidden="true">
+        <div id="workspace" class="workspace page-workspace" aria-hidden="true">
             <nav id="app-nav" class="workspace-nav" aria-label="页面导航"></nav>
-            <div class="page-heading">
-                <h1>坐标管理</h1>
-                <p>集中维护任务会用到的常用位置。选择左侧资源，在右侧编辑名称和范围信息。</p>
-            </div>
 
             <section class="coordinate-shell" aria-label="坐标管理与编辑">
                 <aside class="coordinate-column coordinate-library" aria-labelledby="library-title">

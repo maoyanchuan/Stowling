@@ -462,10 +462,12 @@ public final class ConfigStore {
             requireFields(
                     zone,
                     zonePath,
-                    Set.of("id", "name", "bindings", "expansion", "categoryOptions", "overallArea"),
+                    Set.of("id", "name", "bindings", "expansion", "categoryOptions", "overallArea",
+                            "scan"),
                     Set.of("id", "name", "bindings")
             );
             JsonElement expansion = zone.get("expansion");
+            CategoryScanJson.validate(zone.get("scan"));
             if (expansion != null && !expansion.isJsonNull()) {
                 JsonObject expansionObject = requireObject(
                         expansion,

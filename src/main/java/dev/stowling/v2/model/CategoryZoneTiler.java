@@ -106,6 +106,16 @@ public final class CategoryZoneTiler {
 
     /** Returns the original template so independent rules share a scope across its slices. */
     public static CategoryBindingDefinition templateFor(CategoryZoneDefinition zone, int index) {
+        if (zone.scan() != null) {
+            long slices = zone.scan().slices().stream().filter(slice -> slice.reason().isEmpty()).count();
+            long containers = zone.scan().blocks().stream()
+                    .filter(dev.stowling.v2.scan.CategoryScanBlock::container).count();
+            if (slices * containers == zone.bindings().size()) {
+                return dev.stowling.v2.scan.CategoryScanEngine.templateFor(zone.scan(), index);
+            }
+            return dev.stowling.v2.scan.CategoryScanEngine.templateFor(zone.scan(),
+                    zone.bindings().get(index).id());
+        }
         if (zone.expansion() == null || index < zone.expansion().templateCount()) {
             return zone.bindings().get(index);
         }

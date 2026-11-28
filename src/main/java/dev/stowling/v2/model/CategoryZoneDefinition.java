@@ -10,7 +10,8 @@ public record CategoryZoneDefinition(
         List<CategoryBindingDefinition> bindings,
         CategoryZoneExpansionDefinition expansion,
         CategoryZoneOptions categoryOptions,
-        AreaBounds overallArea
+        AreaBounds overallArea,
+        dev.stowling.v2.scan.CategoryScanDefinition scan
 ) {
     public CategoryZoneDefinition {
         id = Objects.requireNonNull(id, "id");
@@ -27,6 +28,12 @@ public record CategoryZoneDefinition(
         bindings = bindings.stream()
                 .map(binding -> withEffectiveSettings(binding, globalOptions))
                 .toList();
+    }
+
+    public CategoryZoneDefinition(UUID id, String name, List<CategoryBindingDefinition> bindings,
+            CategoryZoneExpansionDefinition expansion, CategoryZoneOptions categoryOptions,
+            AreaBounds overallArea) {
+        this(id, name, bindings, expansion, categoryOptions, overallArea, null);
     }
 
     public CategoryZoneDefinition(UUID id, String name, List<CategoryBindingDefinition> bindings,

@@ -205,7 +205,8 @@ public final class V2ControlServer implements AutoCloseable {
                 previewSchematic(exchange);
                 return;
             }
-            String body = readBody(exchange.getRequestBody());
+            String body = readBody(exchange.getRequestBody(), path.equals("/v1/category-zones")
+                    || path.startsWith("/v1/category-zones/") ? 2 * 1024 * 1024 : MAX_REQUEST_BYTES);
             String method = exchange.getRequestMethod();
             if (configurationIssues.isEmpty()) {
                 dispatch(exchange, path, method, body);
@@ -585,6 +586,16 @@ public final class V2ControlServer implements AutoCloseable {
             }
             return;
         }
+        if ("/v1/category-zones/scan".equals(path)) {
+            requireMethod(method, "POST");
+            JsonObject json = object(body);
+            requireFieldsAny(json, Set.of("area", "scan", "categoryOptions"), Set.of("area"));
+            dev.stowling.v2.config.CategoryScanJson.area(json.get("area"));
+            sendJson(exchange, 200, service.scanCategoryZone(
+                    V2Json.gson().fromJson(json.get("area"), dev.stowling.v2.model.AreaBounds.class),
+                    categoryScan(json), categoryOptions(json)));
+            return;
+        }
         if ("/v1/category-zones".equals(path)) {
             if ("GET".equals(method)) {
                 requireEmpty(body);
@@ -593,7 +604,8 @@ public final class V2ControlServer implements AutoCloseable {
                 JsonObject json = object(body);
                 requireFieldsAny(
                         json,
-                        Set.of("name", "bindings", "expansion", "categoryOptions", "overallArea"),
+                        Set.of("name", "bindings", "expansion", "categoryOptions", "overallArea",
+                                "scan"),
                         Set.of("name", "bindings")
                 );
                 sendJson(
@@ -616,7 +628,7 @@ public final class V2ControlServer implements AutoCloseable {
                 requireFieldsAny(
                         json,
                         Set.of("revision", "name", "bindings", "expansion", "categoryOptions",
-                                "overallArea"),
+                                "overallArea", "scan"),
                         Set.of("revision", "name", "bindings")
                 );
                 sendJson(exchange, 200, service.updateCategoryZone(
@@ -627,7 +639,8 @@ public final class V2ControlServer implements AutoCloseable {
                                 categoryBindings(json),
                                 categoryExpansion(json),
                                 categoryOptions(json),
-                                areaBounds(json, "overallArea")
+                                areaBounds(json, "overallArea"),
+                                categoryScan(json)
                         )
                 ));
             } else if ("DELETE".equals(method)) {
@@ -1232,8 +1245,20 @@ public final class V2ControlServer implements AutoCloseable {
                 categoryBindings(json),
                 categoryExpansion(json),
                 categoryOptions(json),
-                areaBounds(json, "overallArea")
+                areaBounds(json, "overallArea"),
+                categoryScan(json)
         );
+    }
+
+    private static dev.stowling.v2.scan.CategoryScanDefinition categoryScan(JsonObject json) {
+        JsonElement value = json.get("scan");
+        dev.stowling.v2.config.CategoryScanJson.validate(value);
+        if (value == null || value.isJsonNull()) return null;
+        try {
+            return V2Json.gson().fromJson(value, dev.stowling.v2.scan.CategoryScanDefinition.class);
+        } catch (com.google.gson.JsonParseException | IllegalArgumentException exception) {
+            throw new V2ValidationException("扫描配置无效，请核对母版范围和完整箱体", exception);
+        }
     }
 
     private static CategoryZoneExpansionRequest categoryExpansion(
@@ -1813,12 +1838,12 @@ public final class V2ControlServer implements AutoCloseable {
         sendJson(exchange, 200, preview);
     }
 
-    private static String readBody(InputStream input) throws IOException {
+    private static String readBody(InputStream input, int limit) throws IOException {
         try {
             return StandardCharsets.UTF_8.newDecoder()
                     .onMalformedInput(CodingErrorAction.REPORT)
                     .onUnmappableCharacter(CodingErrorAction.REPORT)
-                    .decode(ByteBuffer.wrap(readBytes(input, MAX_REQUEST_BYTES)))
+                    .decode(ByteBuffer.wrap(readBytes(input, limit)))
                     .toString();
         } catch (CharacterCodingException exception) {
             throw invalid("request body must be valid UTF-8");
@@ -1981,6 +2006,13 @@ public final class V2ControlServer implements AutoCloseable {
                 Map.entry("/dashboard.js", read("stowling-web/dashboard.js", js)),
                 Map.entry("/coordinates.js", read("stowling-web/coordinates.js", js)),
                 Map.entry("/coordinate-editor.js", read("stowling-web/coordinate-editor.js", js)),
+                Map.entry("/coordinate-scan.js", read("stowling-web/coordinate-scan.js", js)),
+                Map.entry("/coordinate-scan-canvas.js",
+                        read("stowling-web/coordinate-scan-canvas.js", js)),
+                Map.entry("/coordinate-scan-annotations.js",
+                        read("stowling-web/coordinate-scan-annotations.js", js)),
+                Map.entry("/coordinate-scan.css",
+                        read("stowling-web/coordinate-scan.css", "text/css; charset=utf-8")),
                 Map.entry("/category-standing-ui.js",
                         read("stowling-web/category-standing-ui.js", js)),
                 Map.entry("/coordinate-editor-model.js",

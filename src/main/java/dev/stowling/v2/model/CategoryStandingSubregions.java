@@ -25,6 +25,11 @@ public final class CategoryStandingSubregions {
             UUID scope = binding.optionsEnabled() ? CategoryZoneTiler.templateFor(zone, index).id()
                     : null;
             var plan = binding.standingPlan();
+            if (classificationTask && zone.scan() != null && !plan.enabled()
+                    && CategoryZoneTiler.templateFor(zone, index).standingPlan().enabled()) {
+                // This physical container is outside the explicitly selected standing subregions.
+                continue;
+            }
             if (!classificationTask) {
                 result.add(new Segment(binding, options, scope));
             } else if (!plan.enabled()) {

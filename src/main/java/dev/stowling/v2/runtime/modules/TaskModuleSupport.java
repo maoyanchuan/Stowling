@@ -118,6 +118,11 @@ final class TaskModuleSupport {
             if (ruleId == null || ruleId.isBlank()) {
                 return zone;
             }
+            if (zone.scan() != null) {
+                return new CategoryZoneDefinition(zone.id(), zone.name(), zone.bindings().stream()
+                        .map(binding -> withRule(binding, ruleId)).toList(), null,
+                        zone.categoryOptions(), zone.overallArea(), zone.scan());
+            }
             return new CategoryZoneDefinition(
                     zone.id(),
                     zone.name(),
@@ -136,6 +141,10 @@ final class TaskModuleSupport {
         if (ruleId != null && !ruleId.isBlank()
                 && !ruleId.trim().equals(binding.ruleId())) {
             binding = withRule(binding, ruleId);
+        }
+        if (zone.scan() != null) {
+            return new CategoryZoneDefinition(zone.id(), zone.name(), List.of(binding), null,
+                    zone.categoryOptions(), zone.overallArea(), zone.scan());
         }
         return new CategoryZoneDefinition(
                 zone.id(),

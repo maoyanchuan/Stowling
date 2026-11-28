@@ -199,18 +199,23 @@
         for (const raw of directory.categoryZones || []) {
             const normalized = Zone.normalizeCategoryZones({categoryZones: [raw]})
                 .categoryZones[0];
-            const count = raw.expansion?.templateCount || raw.bindings.length;
+            const source = raw.scan?.templates || raw.bindings;
+            const count = raw.scan ? source.length : raw.expansion?.templateCount || source.length;
             const options = {...categoryOptions(raw), ...raw.categoryOptions};
             options.bulkStacks ??= categoryOptions(raw).bulkStacks;
             values.push({id: raw.id, name: raw.name, kind: "category-zone",
                 overallRegion: raw.overallArea ? region(raw.overallArea)
                     : raw.expansion ? region(raw.expansion.area)
                     : enclosingRegion(raw.bindings),
-                bindings: raw.bindings.slice(0, count).map((binding, index) => ({
-                    id: `${raw.id}-${index}`, name: String(binding.name || ""),
+                setupMode: raw.scan ? "scan" : "manual",
+                scan: raw.scan ? copy(raw.scan) : null,
+                bindings: source.slice(0, count).map((binding, index) => ({
+                    id: raw.scan ? binding.id : `${raw.id}-${index}`,
+                    name: String(binding.name || ""),
                     markerRegion: region(binding.markerArea),
                     storageRegion: region(binding.storageArea),
-                    original: copy(normalized.bindings[index]),
+                    original: raw.scan ? Zone.normalizeBinding(binding)
+                        : copy(normalized.bindings[index]),
                     standingPlan: standingDraft(binding),
                     ...bindingSettings(binding, options, raw)
                 })),
@@ -299,11 +304,19 @@
             }
             return result;
         });
+        const scanning = value.setupMode === "scan" || (!value.setupMode && Boolean(value.scan));
+        if (scanning && !value.scan) throw new Error("请先扫描并确认母版。");
+        if (scanning && !["x", "y", "z"].every(axis => {
+            const suffix = axis.toUpperCase();
+            const a = [value.scan.area[`first${suffix}`], value.scan.area[`second${suffix}`]];
+            const b = [value.overallRegion.first[axis], value.overallRegion.second[axis]];
+            return Math.min(...a) === Math.min(...b) && Math.max(...a) === Math.max(...b);
+        })) throw new Error("总选区已改变，请重新扫描。");
         let expansion = null;
         const hasExpansion = value.bindings.some(binding => (binding.optionsEnabled
             ? binding.categoryOptions?.scopeMode || globalOptions.scopeMode
             : globalOptions.scopeMode) === "single");
-        if (hasExpansion) {
+        if (hasExpansion && !scanning) {
             const bounds = area(value.overallRegion);
             expansion = {...value.originalExpansion,
                 areaFirstX: bounds.firstX, areaFirstY: bounds.firstY, areaFirstZ: bounds.firstZ,
@@ -312,9 +325,39 @@
                 direction: globalOptions.expansionDirection || "AUTO",
                 step: Number(globalOptions.expansionStep || 1)};
         }
-        return Zone.payload({name, bindings, expansion, overallArea: area(value.overallRegion),
+        const result = Zone.payload({name, bindings, expansion, overallArea: area(value.overallRegion),
             categoryOptions: optionsPayload(globalOptions)});
+        if (scanning) {
+            result.scan = {...copy(value.scan), templates: result.bindings.map((binding, index) => {
+                const draft = value.bindings[index];
+                const original = value.scan.templates.find(template => template.id === draft.id);
+                const id = /^[0-9a-f-]{36}$/i.test(draft.id) ? draft.id : crypto.randomUUID();
+                return {id, name: binding.name,
+                    markerArea: area(draft.markerRegion), storageArea: area(draft.storageRegion),
+                    ruleId: binding.ruleId, ignoredMarkerBlockIds: binding.ignoredMarkerBlockIds,
+                    storagePolicy: binding.storagePolicy, standingArea: binding.standingArea,
+                    standingPlan: binding.standingPlan, wholeStorage: false,
+                    optionsEnabled: binding.optionsEnabled,
+                    categoryOptions: binding.categoryOptions || null,
+                    containerOverrides: binding.containerOverrides.map((override, i) => ({
+                        id: original?.containerOverrides?.[i]?.id || crypto.randomUUID(),
+                        storagePosition: {x: override.storageX, y: override.storageY,
+                            z: override.storageZ}, mode: override.mode, itemIds: override.itemIds
+                    }))};
+            })};
+        }
+        return result;
     }
 
-    window.StowlingCoordinateEditorModel = Object.freeze({resources, payload, ref, route, copy});
+    /** @param {object} scan @returns {object[]} */
+    function scanBindings(scan) {
+        return scan.templates.map(binding => ({id: binding.id, name: binding.name,
+            markerRegion: region(binding.markerArea), storageRegion: region(binding.storageArea),
+            original: Zone.normalizeBinding(binding), standingPlan: standingDraft(binding),
+            optionsEnabled: Boolean(binding.optionsEnabled),
+            categoryOptions: binding.categoryOptions ? copy(binding.categoryOptions) : null}));
+    }
+
+    window.StowlingCoordinateEditorModel = Object.freeze({resources, payload, ref, route, copy,
+        scanBindings});
 })();

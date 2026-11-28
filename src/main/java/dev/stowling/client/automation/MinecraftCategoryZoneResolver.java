@@ -145,6 +145,10 @@ public final class MinecraftCategoryZoneResolver
         if (level == null) {
             return CategoryZoneResult.failure("当前没有可识别的游戏世界");
         }
+        if (zone.scan() != null && !zone.scan().dimension().equals(
+                level.dimension().identifier().toString())) {
+            return CategoryZoneResult.failure("当前维度与扫描分类区不同，请返回扫描时的维度");
+        }
         try {
             return resolveBindings(
                     level,
@@ -171,6 +175,8 @@ public final class MinecraftCategoryZoneResolver
             boolean classificationTask
     ) {
         List<CategoryZoneClassifier.Scan> scans = new ArrayList<>();
+        List<CategoryMarker> scannedMarkers = zone.scan() == null ? null
+                : scanMarkers(level, zone.scan().area());
         Map<BlockPosition, AreaBounds> assignedStances = new java.util.LinkedHashMap<>();
         for (var segment : dev.stowling.v2.model.CategoryStandingSubregions.segments(
                 zone, classificationTask)) {
@@ -196,6 +202,12 @@ public final class MinecraftCategoryZoneResolver
             if (unstackable) {
                 appendItemFrameMarkers(level, binding.markerArea(), markers,
                         sameMarkerAndStorageArea(binding), excluded);
+            } else if (scannedMarkers != null && DirectBlockIdCategoryRule.ID.equals(binding.ruleId())) {
+                var sources = markerSourcesFor(binding.ruleId(), markerSources);
+                markers = scannedMarkers.stream()
+                        .filter(marker -> binding.markerArea().contains(marker.position()))
+                        .filter(marker -> sources.contains(marker.source()))
+                        .filter(marker -> !excluded.contains(marker.position())).toList();
             } else {
                 markers = markers(level, binding.markerArea(),
                         Set.copyOf(binding.ignoredMarkerBlockIds()), markerContainerContents,
@@ -276,7 +288,7 @@ public final class MinecraftCategoryZoneResolver
         return String.join(",", names);
     }
 
-    private static List<CategoryMarker> markers(
+    static List<CategoryMarker> markers(
             ClientLevel level,
             AreaBounds area,
             Set<String> ignoredBlockIds,
@@ -318,6 +330,30 @@ public final class MinecraftCategoryZoneResolver
                         Math.abs((long) marker.position().z() - area.firstZ()))
                 .thenComparingInt(CategoryMarker::slotIndex));
         return List.copyOf(result);
+    }
+
+    /** Only scanned configurations opt into relationship-based pot support filtering. */
+    static List<CategoryMarker> scanMarkers(ClientLevel level, AreaBounds area) {
+        List<CategoryMarker> result = new ArrayList<>(markers(level, area, Set.of(), Map.of(),
+                SMART_MARKER_SOURCES, Set.of()));
+        removePottedSupports(level, result);
+        return List.copyOf(result);
+    }
+
+    static void removePottedSupports(LevelReader level, List<CategoryMarker> markers) {
+        var supports = new java.util.HashSet<BlockPosition>();
+        for (var marker : markers) {
+            if (marker.source() != CategoryMarkerSource.FLOWER_POT) continue;
+            var p = marker.position();
+            var pot = new BlockPos(p.x(), p.y(), p.z());
+            var support = pot.below();
+            if (level.getBlockState(pot).canSurvive(level, pot)) {
+                supports.add(blockPosition(support));
+            }
+        }
+        // markers() returns an immutable list; callers that need this filtering use a mutable copy.
+        markers.removeIf(marker -> marker.source() == CategoryMarkerSource.PLACED_ITEM
+                && supports.contains(marker.position()));
     }
 
     static void appendBlockMarkers(
@@ -455,7 +491,7 @@ public final class MinecraftCategoryZoneResolver
         );
         for (ItemFrame frame : frames) {
             BlockPos framePos = frame.getPos();
-            BlockPos support = framePos.relative(frame.getDirection().getOpposite());
+            BlockPos support = itemFrameSupport(framePos, frame.getDirection());
             BlockPos position = attachedOnly || !contains(area, framePos) ? support : framePos;
             if (!contains(area, position) || excluded.contains(blockPosition(position))) {
                 continue;
@@ -490,6 +526,10 @@ public final class MinecraftCategoryZoneResolver
                 source,
                 slotIndex
         ));
+    }
+
+    static BlockPos itemFrameSupport(BlockPos position, net.minecraft.core.Direction facing) {
+        return position.relative(facing.getOpposite());
     }
 
     private static BlockPosition blockPosition(BlockPos position) {

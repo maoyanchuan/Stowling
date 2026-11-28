@@ -101,6 +101,13 @@ public interface V2ControlService {
 
     CategoryZoneListResponse categoryZones();
 
+    default dev.stowling.v2.scan.CategoryScanResult scanCategoryZone(
+            dev.stowling.v2.model.AreaBounds area,
+            dev.stowling.v2.scan.CategoryScanDefinition scan,
+            dev.stowling.v2.model.CategoryZoneOptions options) {
+        throw new IllegalArgumentException("当前未连接游戏扫描服务");
+    }
+
     CategoryZoneDefinition categoryZone(UUID id);
 
     CategoryZoneListResponse createCategoryZone(CategoryZoneRequest request);

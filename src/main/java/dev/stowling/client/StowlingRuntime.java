@@ -143,7 +143,8 @@ public final class StowlingRuntime implements AutoCloseable {
                 () -> inventory(inventories),
                 storageSettings,
                 warehouse::getForDisplay
-        );
+        ).withCategoryScanner(new dev.stowling.client.automation.MinecraftCategoryScan(
+                minecraft, scheduler)::read);
 
         V2ControlServer server = V2ControlServer.loopbackWithTokenFile(service, tokenFile, port);
         var baritoneCleanup = new BaritoneClientCleanup(

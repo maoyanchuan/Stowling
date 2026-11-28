@@ -61,6 +61,25 @@ public final class V2ControlServiceImpl implements V2ControlService {
     private final Supplier<List<InventoryInfo>> inventory;
     private final String configurationNotice;
     private Supplier<dev.stowling.inventory.WarehouseInventory> warehouse;
+    private java.util.function.Function<AreaBounds,
+            dev.stowling.v2.scan.CategoryScanSnapshot> categoryScanner;
+
+    public V2ControlServiceImpl withCategoryScanner(java.util.function.Function<AreaBounds,
+            dev.stowling.v2.scan.CategoryScanSnapshot> scanner) {
+        categoryScanner = Objects.requireNonNull(scanner);
+        return this;
+    }
+
+    @Override
+    public dev.stowling.v2.scan.CategoryScanResult scanCategoryZone(AreaBounds area,
+            dev.stowling.v2.scan.CategoryScanDefinition scan,
+            dev.stowling.v2.model.CategoryZoneOptions options) {
+        dev.stowling.v2.scan.CategoryScanDefinition.validateArea(area);
+        if (categoryScanner == null) throw new V2ValidationException("当前未连接游戏扫描服务");
+        var world = categoryScanner.apply(area);
+        return scan == null ? dev.stowling.v2.scan.CategoryScanEngine.preview(world, options)
+                : dev.stowling.v2.scan.CategoryScanEngine.evaluate(world, scan, options);
+    }
     private final CategoryRuleRegistry categoryRules =
             CategoryRuleRegistry.standard();
 
@@ -592,6 +611,7 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 request.expansion(),
                 request.categoryOptions(),
                 request.overallArea(),
+                request.scan(),
                 null
         ));
         return categoryZoneResponse(saveSpatialConfig(
@@ -628,6 +648,7 @@ public final class V2ControlServiceImpl implements V2ControlService {
                 request.expansion(),
                 request.categoryOptions(),
                 request.overallArea(),
+                request.scan(),
                 existing
         );
         List<CategoryZoneDefinition> zones = current.config()
@@ -1977,6 +1998,7 @@ public final class V2ControlServiceImpl implements V2ControlService {
             CategoryZoneExpansionRequest requestedExpansion,
             dev.stowling.v2.model.CategoryZoneOptions requestedOptions,
             dev.stowling.v2.model.AreaBounds requestedArea,
+            dev.stowling.v2.scan.CategoryScanDefinition requestedScan,
             CategoryZoneDefinition existing
     ) {
         var options = requestedOptions != null ? requestedOptions
@@ -1987,6 +2009,21 @@ public final class V2ControlServiceImpl implements V2ControlService {
                         requestedExpansion.firstZ(), requestedExpansion.secondX(),
                         requestedExpansion.secondY(), requestedExpansion.secondZ())
                         : existing == null ? null : existing.overallArea();
+        if (requestedScan != null) {
+            if (requestedExpansion != null || !dev.stowling.v2.scan.CategoryScanEngine.sameArea(
+                    overallArea, requestedScan.area())) {
+                throw new V2ValidationException("扫描配置不能混用自动铺满或应用到不同总选区");
+            }
+            var priorTemplates = existing != null && existing.scan() != null
+                    ? existing.scan().templates() : List.<CategoryBindingDefinition>of();
+            var templates = bindings(requestedBindings, priorTemplates, options);
+            var result = scanCategoryZone(overallArea, requestedScan.withTemplates(templates), options);
+            if (result.bindings().isEmpty()) {
+                throw new V2ValidationException("所有片均未通过核对，请校正母版后重新确认");
+            }
+            return new CategoryZoneDefinition(id, name, result.bindings(), null, options,
+                    overallArea, result.scan());
+        }
         if (requestedExpansion == null) {
             return new CategoryZoneDefinition(
                     id,

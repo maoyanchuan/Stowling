@@ -118,6 +118,7 @@
      * ruleSelects: CategorySelect[]}} CategoryOptionsContext */
     const bindingOptions = new WeakMap();
     let standingEditor = null;
+    let scanEditor = null;
     const globalCategoryContext = createCategoryOptionsContext(
         document.querySelector(".category-options")
     );
@@ -633,6 +634,7 @@
         remove.addEventListener("click", () => {
             row.remove();
             dirty = true;
+            scanEditor?.markChanged();
             context.fields["add-position"].focus();
         });
         row.append(createRulePosition(position), remove);
@@ -846,6 +848,7 @@
             context.ruleSelects = context.ruleSelects.filter(value => value !== control);
             form.remove();
             dirty = true;
+            scanEditor?.markChanged();
             syncCategoryOptionSummaries(context);
             context.fields["add-rule"].focus();
         });
@@ -1098,6 +1101,7 @@
             card.remove();
             dirty = true;
             updateCategoryBindingCards();
+            scanEditor?.markChanged();
         });
         summary.append(toggle, name);
         const grid = document.createElement("div");
@@ -1194,7 +1198,7 @@
             groups: standingBindingChoices, createSelect: createStandingSelect, reveal,
             nextId,
             bindInputs: window.Stowling?.bindCoordinateInputs,
-            changed: () => { dirty = true; }
+            changed: () => { dirty = true; scanEditor?.markChanged(); }
         });
         document.querySelector("#category-standing-settings")
             .replaceChildren(standingEditor.root);
@@ -1398,6 +1402,7 @@
         nodes.form.querySelector("button[type=submit]").textContent = `保存${kindLabel(kind)}`;
         nodes.duplicate.textContent = `复制${kindLabel(kind)}`;
         nodes.remove.textContent = `删除${kindLabel(kind)}`;
+        scanEditor?.load(coordinate, kind);
     }
 
     /** @param {Coordinate} coordinate @returns {string} */
@@ -1690,7 +1695,10 @@
         const hasCoordinate = Boolean(coordinate);
         nodes.empty.hidden = hasCoordinate;
         nodes.content.hidden = !hasCoordinate;
-        if (!coordinate) return;
+        if (!coordinate) {
+            document.dispatchEvent(new CustomEvent("stowling:scan-invalidate"));
+            return;
+        }
         if (!dirty) populateEditor(coordinate);
     }
 
@@ -1771,6 +1779,10 @@
             coordinate.region = readRegionFields(nodes.region);
             if (!coordinate.region) return;
         } else {
+            if (scanEditor && !scanEditor.canSave()) {
+                setStatus("请先确认当前总选区的母版并应用核对结果。", "error");
+                return;
+            }
             const contexts = [globalCategoryContext, ...Array.from(
                 nodes.categoryBindings.children, card => bindingOptions.get(card)
             )];
@@ -1786,6 +1798,8 @@
                 setStatus("请填写总选区、识别区和储存区的整数坐标。", "error");
                 return;
             }
+            try { Object.assign(coordinate, scanEditor.snapshot()); }
+            catch (error) { setStatus(error.message, "error"); return; }
         }
         await writeAction(async () => {
             const body = Model.payload(coordinate);
@@ -1818,6 +1832,17 @@
         const source = selectedCoordinate();
         if (!source) return;
         const copy = cloneCoordinate(source);
+        if (source.kind === "category-zone" && state.editorKind === "category-zone") {
+            try {
+                const snapshot = scanEditor.snapshot();
+                if (source.scan || snapshot.setupMode === "scan") {
+                    Object.assign(copy, snapshot, {bindings: readCategoryBindings(),
+                        categoryOptions: readCategoryOptions(),
+                        overallRegion: readRegionFields(nodes.categoryOverall),
+                        name: `${nodes.name.value.trim() || source.name} 副本`});
+                }
+            } catch (error) { setStatus(error.message, "error"); return; }
+        }
         dirty = false;
         coordinates.splice(coordinates.indexOf(source) + 1, 0, copy);
         state.selectedId = copy.id;
@@ -2166,6 +2191,31 @@
     }
 
     bindCategoryOptions(globalCategoryContext);
+    scanEditor = window.StowlingCoordinateScan.create(nodes.categoryFields, {
+        readRegion: () => readRegionFields(nodes.categoryOverall),
+        readBindings: readCategoryBindings,
+        writeBindings: renderCategoryBindings,
+        readOptions: readCategoryOptions,
+        writeOptions: writeCategoryOptions,
+        validStations: () => !standingEditor || standingEditor.valid(),
+        emptyRegion: () => ({first: {x: null, y: null, z: null},
+            second: {x: null, y: null, z: null}}),
+        bindMode: (row, changed) => {
+            const wrap = row.querySelector("[data-category-select]");
+            const control = {key: "setupMode", wrap, select: wrap.querySelector("select"),
+                trigger: wrap.querySelector(".category-select-trigger"),
+                current: wrap.querySelector(".category-select-current"),
+                menu: wrap.querySelector(".category-select-menu"),
+                options: [...wrap.querySelectorAll(".category-select-option")]};
+            bindCategorySelect(control, changed);
+            return () => syncCategorySelect(control);
+        },
+        changed: () => { dirty = true; },
+        reveal,
+        setSaveEnabled: enabled => {
+            nodes.form.querySelector("button[type=submit]").disabled = !enabled;
+        }
+    });
     document.addEventListener("pointerdown", event => {
         if (kindMenuOpen && !nodes.kindWrap.contains(event.target)) setKindMenuOpen(false);
         if (categoryMenuOpen && !categoryMenuOpen.wrap.contains(event.target)) {

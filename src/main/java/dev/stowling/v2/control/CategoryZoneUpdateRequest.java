@@ -8,8 +8,16 @@ public record CategoryZoneUpdateRequest(
         List<CategoryBindingRequest> bindings,
         CategoryZoneExpansionRequest expansion,
         dev.stowling.v2.model.CategoryZoneOptions categoryOptions,
-        dev.stowling.v2.model.AreaBounds overallArea
+        dev.stowling.v2.model.AreaBounds overallArea,
+        dev.stowling.v2.scan.CategoryScanDefinition scan
 ) {
+    public CategoryZoneUpdateRequest(String revision, String name,
+            List<CategoryBindingRequest> bindings, CategoryZoneExpansionRequest expansion,
+            dev.stowling.v2.model.CategoryZoneOptions categoryOptions,
+            dev.stowling.v2.model.AreaBounds overallArea) {
+        this(revision, name, bindings, expansion, categoryOptions, overallArea, null);
+    }
+
     public CategoryZoneUpdateRequest(String revision, String name,
             List<CategoryBindingRequest> bindings, CategoryZoneExpansionRequest expansion,
             dev.stowling.v2.model.CategoryZoneOptions categoryOptions) {

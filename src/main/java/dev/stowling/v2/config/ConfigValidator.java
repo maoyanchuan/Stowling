@@ -1867,6 +1867,15 @@ public final class ConfigValidator {
                 throw new V2ValidationException("duplicate category zone id");
             }
             validateCategoryZoneExpansion(zone);
+            if (zone.scan() != null) {
+                if (zone.expansion() != null
+                        || !dev.stowling.v2.scan.CategoryScanEngine.sameArea(
+                                zone.overallArea(), zone.scan().area())
+                        || !zone.bindings().equals(
+                                dev.stowling.v2.scan.CategoryScanEngine.savedBindings(zone.scan()))) {
+                    throw new V2ValidationException("扫描母版、有效片与保存绑定不一致");
+                }
+            }
             validateCategoryRuleTargets(zone);
             for (int bindingIndex = 0; bindingIndex < zone.bindings().size(); bindingIndex++) {
                 CategoryBindingDefinition binding = zone.bindings().get(bindingIndex);

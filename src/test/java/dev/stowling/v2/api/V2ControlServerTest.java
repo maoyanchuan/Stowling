@@ -47,6 +47,78 @@ import org.junit.jupiter.api.io.TempDir;
 
 class V2ControlServerTest {
     @Test
+    void scanRequiresAuthenticationAndSavingRechecksTheWorldWithoutFillingHoles() throws Exception {
+        var store = new ConfigStore(directory.resolve("scanned.json"));
+        store.loadOrReset();
+        var observed = new java.util.concurrent.atomic.AtomicReference<>(
+                dev.stowling.v2.scan.CategoryScanEngineTest.world(-1, -1));
+        var reads = new java.util.concurrent.atomic.AtomicInteger();
+        var service = new V2ControlServiceImpl(store, new TaskRunManager(new FailedNavigation()),
+                List::of).withCategoryScanner(area -> {
+                    reads.incrementAndGet();
+                    var world = observed.get();
+                    return new dev.stowling.v2.scan.CategoryScanSnapshot(area, world.dimension(),
+                            world.blocks(), world.markers());
+                });
+        var gson = new Gson();
+        var request = new JsonObject();
+        request.add("area", gson.toJsonTree(dev.stowling.v2.scan.CategoryScanEngineTest.AREA));
+        request.add("categoryOptions", gson.toJsonTree(
+                dev.stowling.v2.scan.CategoryScanEngineTest.OPTIONS));
+        try (var fixture = new Fixture(service)) {
+            String path = "/v1/category-zones/scan";
+            assertEquals(401, fixture.send(path, "POST", request.toString(), false).statusCode());
+            assertEquals(0, reads.get());
+            assertEquals(405, fixture.send(path, "GET", null, true).statusCode());
+            var fractional = request.deepCopy();
+            fractional.getAsJsonObject("area").addProperty("firstX", 0.5);
+            assertEquals(400, fixture.send(path, "POST", fractional.toString(), true).statusCode());
+            var preview = fixture.send(path, "POST", request.toString(), true);
+            assertEquals(200, preview.statusCode(), preview.body());
+            request.add("scan", object(preview).get("scan"));
+            observed.set(dev.stowling.v2.scan.CategoryScanEngineTest.world(2, -1));
+            var checked = fixture.send(path, "POST", request.toString(), true);
+            assertEquals(200, checked.statusCode(), checked.body());
+            assertEquals(9, object(checked).getAsJsonArray("bindings").size());
+            var body = new JsonObject();
+            body.addProperty("name", "Scanned");
+            body.add("overallArea", request.get("area"));
+            body.add("categoryOptions", request.get("categoryOptions"));
+            body.add("scan", object(checked).get("scan"));
+            var templates = body.getAsJsonObject("scan").getAsJsonArray("templates");
+            var bindings = new JsonArray();
+            for (var raw : templates) {
+                var template = raw.getAsJsonObject();
+                var binding = new JsonObject();
+                binding.addProperty("ruleId", "DIRECT_BLOCK_ID");
+                binding.add("name", template.get("name"));
+                for (String prefix : List.of("marker", "storage")) {
+                    for (String corner : List.of("First", "Second")) {
+                        for (String axis : List.of("X", "Y", "Z")) {
+                            binding.add(prefix + corner + axis, template.getAsJsonObject(prefix + "Area")
+                                    .get(corner.toLowerCase() + axis));
+                        }
+                    }
+                }
+                bindings.add(binding);
+            }
+            body.add("bindings", bindings);
+            var saved = fixture.send("/v1/category-zones", "POST", body.toString(), true);
+            assertEquals(201, saved.statusCode(), saved.body());
+            var zone = object(saved).getAsJsonArray("categoryZones").get(0).getAsJsonObject();
+            assertEquals(9, zone.getAsJsonArray("bindings").size());
+            body.add("revision", object(saved).get("revision"));
+            body.add("scan", zone.get("scan"));
+            var updated = fixture.send("/v1/category-zones/" + zone.get("id").getAsString(),
+                    "PUT", body.toString(), true);
+            assertEquals(200, updated.statusCode(), updated.body());
+            assertEquals(9, new ConfigStore(directory.resolve("scanned.json")).read().config()
+                    .categoryZones().getFirst().bindings().size());
+            assertEquals(4, reads.get());
+        }
+    }
+
+    @Test
     void savesMergedClassificationBaselineThroughAuthenticatedApi() throws Exception {
         Path file = directory.resolve("unstackable-zone.json");
         var store = new ConfigStore(file);

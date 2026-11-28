@@ -41,6 +41,12 @@ public final class CategoryZoneClassifier {
             CategoryRuleRegistry rules,
             Set<CategoryMarkerSource> explicitSources
     ) {
+        return resolvePrepared(prepare(raw, rules, explicitSources), rules, explicitSources);
+    }
+
+    /** Collect original references once before checking individual scanned slices. */
+    public static List<Scan> prepare(List<Scan> raw, CategoryRuleRegistry rules,
+            Set<CategoryMarkerSource> explicitSources) {
         List<Scan> filtered = raw.stream().map(scan -> filter(scan, rules, explicitSources)).toList();
         // References are collected once, before any inference, across the entire zone.
         Set<String> references = new LinkedHashSet<>();
@@ -54,7 +60,17 @@ public final class CategoryZoneClassifier {
                 }
             }
         }
-        List<Scan> resolvedScans = filtered.stream().map(scan -> reduce(scan, references)).toList();
+        return filtered.stream().map(scan -> reduce(scan, references)).toList();
+    }
+
+    public static CategoryRuleResult resolvePrepared(List<Scan> resolvedScans,
+            CategoryRuleRegistry rules, Set<CategoryMarkerSource> explicitSources) {
+        return resolvePrepared(resolvedScans, rules, explicitSources, true);
+    }
+
+    public static CategoryRuleResult resolvePrepared(List<Scan> resolvedScans,
+            CategoryRuleRegistry rules, Set<CategoryMarkerSource> explicitSources,
+            boolean appendItemBindings) {
         Map<String, List<ContainerTarget>> categories = new LinkedHashMap<>();
         List<ClassificationLayoutEntry> layout = new ArrayList<>();
         for (Scan scan : resolvedScans) {
@@ -74,7 +90,7 @@ public final class CategoryZoneClassifier {
         }
         for (List<Scan> scope : scopes.values()) {
             CategoryZoneOptions options = scope.getFirst().options();
-            if (options == null || !options.multiItemBindingsEnabled()) continue;
+            if (!appendItemBindings || options == null || !options.multiItemBindingsEnabled()) continue;
             options.validateActiveRules();
             for (CategoryItemBinding rule : options.multiItemBindings()) {
                 List<ContainerTarget> targets = bindingTargets(scope, rule);

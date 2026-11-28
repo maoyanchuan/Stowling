@@ -25,6 +25,40 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 class MinecraftCategoryZoneResolverTest {
+    @Test
+    void frameSupportFollowsTheAttachmentDirectionRatherThanAlwaysRemovingTheLowerCell() {
+        var upper = new BlockPos(2, 65, 3);
+        assertEquals(upper.below(), MinecraftCategoryZoneResolver.itemFrameSupport(
+                upper, net.minecraft.core.Direction.UP));
+        assertEquals(upper.west(), MinecraftCategoryZoneResolver.itemFrameSupport(
+                upper, net.minecraft.core.Direction.EAST));
+        assertEquals(upper.north(), MinecraftCategoryZoneResolver.itemFrameSupport(
+                upper, net.minecraft.core.Direction.SOUTH));
+    }
+
+    @Test
+    void pottedSupportRemovalIsLocalAndLeavesTheSameMaterialAsAStandaloneMarker() {
+        var pot = new BlockPosition(0, 65, 3);
+        var support = pot.offset(0, -1, 0);
+        var separate = support.offset(1, 0, 0);
+        LevelReader level = (LevelReader) Proxy.newProxyInstance(LevelReader.class.getClassLoader(),
+                new Class<?>[]{LevelReader.class}, (proxy, method, args) -> {
+                    if (method.getName().equals("getBlockState")) {
+                        return ((BlockPos) args[0]).equals(new BlockPos(0, 65, 3))
+                                ? Blocks.POTTED_FERN.defaultBlockState()
+                                : Blocks.STONE.defaultBlockState();
+                    }
+                    if (method.getName().equals("getBlockEntity")) return null;
+                    throw new UnsupportedOperationException(method.getName());
+                });
+        var markers = new ArrayList<>(List.of(new CategoryMarker(pot, "minecraft:fern",
+                CategoryMarkerSource.FLOWER_POT, -1), new CategoryMarker(support, STONE),
+                new CategoryMarker(separate, STONE)));
+        MinecraftCategoryZoneResolver.removePottedSupports(level, markers);
+        assertEquals(List.of(new CategoryMarker(pot, "minecraft:fern",
+                CategoryMarkerSource.FLOWER_POT, -1), new CategoryMarker(separate, STONE)), markers);
+    }
+
     private static final String CHEST = "minecraft:chest";
     private static final String TRAPPED_CHEST = "minecraft:trapped_chest";
     private static final String BARREL = "minecraft:barrel";

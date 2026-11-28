@@ -58,7 +58,13 @@ def theme_tokens(source: str, selector: str) -> dict[str, str]:
 @pytest.mark.parametrize("selector", [":root", ':root[data-theme="green"]'])
 def test_sample_palette_matches_the_project(selector: str) -> None:
     project = WORKBENCH.read_text(encoding="utf-8")
-    assert theme_tokens(read_sample(), selector) == theme_tokens(project, selector)
+    parser = SampleMarkup()
+    parser.feed(read_sample())
+    theme = next(source for source in parser.external_sources
+                 if source.endswith("settings-theme.css"))
+    assert theme_tokens((SAMPLE.parent / theme).read_text("utf-8"), selector) == theme_tokens(
+        project, selector,
+    )
 
 
 def test_standalone_page_has_no_missing_labels_or_external_assets() -> None:
@@ -66,7 +72,9 @@ def test_standalone_page_has_no_missing_labels_or_external_assets() -> None:
     parser.feed(read_sample())
     assert len(parser.ids) == len(set(parser.ids))
     assert set(parser.references).issubset(set(parser.ids))
-    assert parser.external_sources == []
+    assert len(parser.external_sources) == 3
+    assert all(not source.startswith(("http:", "https:", "//"))
+               and (SAMPLE.parent / source).is_file() for source in parser.external_sources)
     assert parser.themes == {"green", "gray"}
 
 

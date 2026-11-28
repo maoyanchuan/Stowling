@@ -32,11 +32,18 @@ def animation_page(request: pytest.FixtureRequest) -> Iterator[Any]:
             script = (WEB / "coordinate-editor.js").read_text(encoding="utf-8")
         else:
             script = html
+            shared = ROOT / "docs/ui/shared"
+            for name in ("settings-theme.css", "settings-controls.css"):
+                page.add_style_tag(content=(shared / name).read_text("utf-8"))
+            page.add_script_tag(content=(shared / "settings-controls.js").read_text("utf-8"))
         # Exercise each real reveal helper and stylesheet without authentication or demo state.
         helper = re.search(r'    function reveal\([\s\S]*?(?=\n    /\*\*)', script)
         assert helper is not None
+        state = "const reveals = new WeakMap();\n"
+        if request.param == "template":
+            state = "const animateReveal = StowlingSettingsControls.createReveal();\n"
         page.add_script_tag(content=(
-            "const reveals = new WeakMap();\n" + helper.group()
+            state + helper.group()
             + "\nwindow.revealForTest = reveal;"
         ))
         page.evaluate("""() => {

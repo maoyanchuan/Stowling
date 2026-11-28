@@ -13,78 +13,11 @@
             // Match the project's default light green theme when storage is unavailable.
         }
     </script>
+    <link rel="stylesheet" href="shared/settings-theme.css">
+    <link rel="stylesheet" href="shared/settings-controls.css">
+    <script src="shared/settings-controls.js"></script>
     <style>
-:root {
-    color-scheme: dark;
-    --bg: #111214;
-    --bg-accent: #111214;
-    --panel: #1c1d20;
-    --panel-solid: #222326;
-    --text: #e6e6e8;
-    --muted: #9b9ca5;
-    --line: #36373c;
-    --accent: #b7c9c2;
-    --accent-strong: #d5e8df;
-    --accent-soft: #303b36;
-    --warning: #e4bd7a;
-    --danger: #f08b86;
-    --shadow: none;
-    --radius: 14px;
-    --page-max-width: 1520px;
-    --page-gutter: 24px;
-    background-color: var(--bg);
-    font-size: 14px;
-}
-
-:root[data-theme="green"] {
-    color-scheme: light;
-    --bg: #eff2ec;
-    --bg-accent: #dce5da;
-    --panel: rgba(255, 255, 255, 0.86);
-    --panel-solid: #ffffff;
-    --text: #18231c;
-    --muted: #657168;
-    --line: rgba(38, 64, 47, 0.16);
-    --accent: #26704b;
-    --accent-strong: #174b32;
-    --accent-soft: #d9eee2;
-    --warning: #9a6417;
-    --danger: #a13d37;
-    --shadow: 0 18px 50px rgba(32, 56, 40, 0.1);
-    --radius: 18px;
-    --theme-border: var(--line);
-    --theme-focus: rgba(38, 112, 75, 0.25);
-    --theme-text: var(--text);
-    --theme-muted: var(--muted);
-    --theme-input: rgba(255, 255, 255, 0.86);
-    --theme-surface: var(--panel-solid);
-    --theme-subtle: rgba(38, 112, 75, 0.04);
-    --theme-card: rgba(255, 255, 255, 0.52);
-    --theme-hover: var(--accent-soft);
-    --theme-selected: var(--accent-soft);
-    --theme-selected-text: var(--accent-strong);
-    --theme-primary: var(--accent);
-    --theme-primary-text: #ffffff;
-    --theme-switch-off: #a6aca8;
-    --theme-switch-on: var(--accent);
-    --theme-switch-thumb: #ffffff;
-    --theme-success-border: var(--accent);
-    --theme-success-text: var(--accent-strong);
-    --theme-success-bg: var(--accent-soft);
-    --theme-error-border: var(--danger);
-    --theme-error-text: var(--danger);
-    --theme-error-bg: rgba(180, 67, 58, 0.08);
-    --theme-inset-shadow: rgba(38, 64, 47, 0.08);
-    --theme-shadow: var(--shadow);
-    --theme-backdrop: blur(18px);
-    --theme-grid: block;
-    --theme-page:
-        radial-gradient(circle at 8% 5%, rgba(108, 158, 122, 0.24), transparent 31rem),
-        radial-gradient(circle at 92% 4%, rgba(220, 189, 113, 0.19), transparent 27rem),
-        linear-gradient(145deg, var(--bg), var(--bg-accent));
-}
-
-    /* Palette snapshot: src/main/resources/stowling-web/workbench.css. */
+    /* Page shell; common controls and palette load above. */
     * { box-sizing: border-box; }
     body {
         min-width: 320px;
@@ -170,9 +103,7 @@
         --sample-row-height: 82px;
         --sample-padding: 20px;
         --sample-font-size: 16px;
-        --sample-control-height: 42px;
-        --sample-toggle-width: 56px;
-        --sample-toggle-height: 32px;
+        --sample-control-height: var(--settings-control-height);
         --sample-select-width: 38%;
         --sample-input-width: 56%;
         --sample-header: var(--theme-surface, #191a1d);
@@ -180,8 +111,6 @@
         --sample-control: var(--theme-input, #161719);
         --sample-text: var(--text);
         --sample-label: var(--muted);
-        --sample-toggle-off: var(--theme-switch-off, #51515c);
-        --sample-toggle-on: var(--theme-switch-on, #91989c);
         --sample-rail: var(--theme-switch-on, #91989c);
         --sample-rail-width: 5px;
         width: 100%;
@@ -299,23 +228,6 @@
         gap: 16px;
         min-height: var(--sample-row-height);
     }
-    #stowling-settings-standard .sample-row::before {
-        /* One rounded hover layer; parent containers must not clip either edge. */
-        content: "";
-        position: absolute;
-        z-index: -1;
-        inset: 4px -12px;
-        border-radius: 10px;
-        background: var(--theme-hover, #34363c);
-        opacity: 0;
-        pointer-events: none;
-        transition: opacity 140ms ease-out;
-    }
-    @media (hover: hover) {
-        #stowling-settings-standard .sample-row:hover::before {
-            opacity: 1;
-        }
-    }
     #stowling-settings-standard .sample-row-label,
     #stowling-settings-standard .sample-section-title {
         min-width: 0;
@@ -332,36 +244,6 @@
         flex: 0 0 auto;
         gap: 12px;
     }
-    #stowling-settings-standard .sample-switch {
-        appearance: none;
-        flex: 0 0 auto;
-        position: relative;
-        width: var(--sample-toggle-width);
-        height: var(--sample-toggle-height);
-        padding: 0;
-        margin: 0;
-        border: 0;
-        border-radius: 999px;
-        background: var(--sample-toggle-off);
-        transition: background-color 160ms ease-out;
-    }
-    #stowling-settings-standard .sample-switch::after {
-        content: "";
-        position: absolute;
-        top: 5px;
-        left: 5px;
-        width: calc(var(--sample-toggle-height) - 10px);
-        height: calc(var(--sample-toggle-height) - 10px);
-        border-radius: 50%;
-        background: var(--theme-switch-thumb, #f6f6f8);
-        transition: transform 160ms ease-out;
-    }
-    #stowling-settings-standard .sample-switch:checked {
-        background: var(--sample-toggle-on);
-    }
-    #stowling-settings-standard .sample-switch:checked::after {
-        transform: translateX(calc(var(--sample-toggle-width) - var(--sample-toggle-height)));
-    }
     #stowling-settings-standard .sample-select-actions {
         flex-basis: var(--sample-select-width);
         min-width: 240px;
@@ -374,7 +256,6 @@
     #stowling-settings-standard .sample-strategy-row {
         z-index: 2;
     }
-    #stowling-settings-standard .sample-select,
     #stowling-settings-standard .sample-number {
         width: 100%;
         height: var(--sample-control-height);
@@ -387,102 +268,6 @@
         font: inherit;
         font-variant-numeric: tabular-nums;
         caret-color: var(--sample-text);
-    }
-    #stowling-settings-standard .sample-select {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 12px;
-        text-align: left;
-    }
-    #stowling-settings-standard .sample-select-current {
-        min-width: 0;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-    }
-    #stowling-settings-standard .sample-select-chevron {
-        flex: 0 0 auto;
-        color: var(--sample-label);
-        transition: transform 180ms cubic-bezier(0.16, 1, 0.3, 1);
-    }
-    #stowling-settings-standard .sample-select[aria-expanded="true"] {
-        background: var(--theme-hover, #34363c);
-    }
-    #stowling-settings-standard .sample-select[aria-expanded="true"] svg {
-        transform: rotate(180deg);
-    }
-    #stowling-settings-standard .sample-select-menu {
-        position: absolute;
-        display: grid;
-        gap: 6px;
-        z-index: 10;
-        top: calc(100% + 6px);
-        left: auto;
-        right: 0;
-        width: max(100%, min(280px, calc(100vw - 64px)));
-        padding: 6px;
-        border: 1px solid var(--line);
-        border-radius: 12px;
-        background: var(--theme-surface, #161719);
-        box-shadow: 0 10px 28px rgba(0, 0, 0, 0.18);
-        transform-origin: top center;
-    }
-    #stowling-settings-standard .sample-select-menu[data-placement="above"] {
-        top: auto;
-        bottom: calc(100% + 6px);
-        transform-origin: bottom center;
-    }
-    #stowling-settings-standard .sample-select-option {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 12px;
-        width: 100%;
-        min-height: 54px;
-        padding: 10px 12px;
-        border: 0;
-        border-radius: 7px;
-        color: var(--sample-text);
-        background: transparent;
-        font: inherit;
-        text-align: left;
-    }
-    #stowling-settings-standard .sample-select-option > span {
-        min-width: 0;
-    }
-    #stowling-settings-standard .sample-select-option small {
-        display: block;
-        margin-top: 3px;
-        color: var(--sample-label);
-        font-size: 14px;
-        line-height: 1.5;
-    }
-    #stowling-settings-standard .sample-select-option > svg {
-        flex: 0 0 auto;
-        opacity: 0;
-    }
-    #stowling-settings-standard .sample-select-option[aria-selected="true"] {
-        color: var(--theme-selected-text, #f1f1f3);
-        background: var(--theme-selected, #3b3d44);
-    }
-    #stowling-settings-standard .sample-select-option[aria-selected="true"] > svg {
-        opacity: 1;
-    }
-    #stowling-settings-standard .sample-select-option[aria-selected="true"] small {
-        color: inherit;
-    }
-    #stowling-settings-standard .sample-select-option:focus-visible {
-        outline-offset: -2px;
-    }
-    @media (hover: hover) {
-        #stowling-settings-standard .sample-select-option:hover:not([aria-selected="true"]) {
-            background: color-mix(
-                in srgb,
-                var(--theme-hover, #34363c) 45%,
-                var(--theme-surface, #161719)
-            );
-        }
     }
     #stowling-settings-standard .sample-section-title {
         display: flex;
@@ -3297,7 +3082,8 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
     const choiceLabels = {
         price: "按价格波动设置", stock: "按库存数量设置", all: "直接售卖"
     };
-    const reveals = new WeakMap();
+    const Controls = window.StowlingSettingsControls;
+    const reveal = Controls.createReveal();
     let menuOpen = false;
     let targetMenuOpen = false;
     const stateKey = "stowling.task-settings-sample.state";
@@ -3309,54 +3095,6 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
         priceThreshold: "10", stockThreshold: "640", targetZones: [],
         debugMode: false, experimentalExampleEnabled: false, experimentsExpanded: false
     };
-
-    /**
-     * @param {HTMLElement} content
-     * @param {boolean} expanded
-     * @param {boolean} animate
-     * @param {string} [kind]
-     * @returns {void}
-     */
-    function reveal(content, expanded, animate, kind = "panel") {
-        const previous = reveals.get(content);
-        if (previous?.expanded === expanded) return;
-        const height = content.hidden ? 0 : content.getBoundingClientRect().height;
-        const computed = previous?.animation ? window.getComputedStyle(content) : null;
-        const opacity = computed?.opacity ?? (expanded ? 0 : 1);
-        const offset = content.dataset.placement === "above"
-            ? "translateY(4px)" : "translateY(-4px)";
-        const transform = computed?.transform ?? (expanded ? offset : "none");
-        previous?.animation?.cancel();
-        const current = {expanded, animation: null};
-        reveals.set(content, current);
-        content.inert = !expanded;
-        content.hidden = false;
-        const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
-        if (!previous || !animate || reduced || !content.animate) {
-            content.hidden = !expanded;
-            content.style.overflow = "";
-            return;
-        }
-        const frames = kind === "menu" ? [
-            {opacity, transform},
-            {opacity: expanded ? 1 : 0, transform: expanded ? "none" : offset}
-        ] : [
-            {height: `${height}px`, opacity},
-            {height: `${expanded ? content.scrollHeight : 0}px`, opacity: expanded ? 1 : 0}
-        ];
-        if (kind === "panel") content.style.overflow = "hidden";
-        const animation = content.animate(frames, {
-            duration: expanded ? 200 : 150,
-            easing: "cubic-bezier(0.16, 1, 0.3, 1)"
-        });
-        current.animation = animation;
-        animation.finished.then(() => {
-            if (reveals.get(content) !== current) return;
-            content.hidden = !expanded;
-            content.style.overflow = "";
-            current.animation = null;
-        }).catch(() => {});
-    }
 
     /** @returns {void} */
     function renderRunState() {
@@ -3494,12 +3232,7 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
         menuOpen = open;
         if (open) {
             setTargetMenuOpen(false, false, false);
-            strategyMenu.hidden = false;
-            const bounds = strategyTrigger.getBoundingClientRect();
-            const height = strategyMenu.scrollHeight;
-            const below = window.innerHeight - bounds.bottom - 12;
-            strategyMenu.dataset.placement = below < height && bounds.top > height + 12
-                ? "above" : "below";
+            Controls.positionMenu(strategyTrigger, strategyMenu);
         }
         strategyTrigger.setAttribute("aria-expanded", String(open));
         reveal(strategyMenu, open, animate, "menu");
@@ -3540,12 +3273,7 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
         targetMenuOpen = open;
         if (open) {
             setMenuOpen(false, false, false);
-            targetMenu.hidden = false;
-            const bounds = targetTrigger.getBoundingClientRect();
-            const height = targetMenu.scrollHeight;
-            const below = window.innerHeight - bounds.bottom - 12;
-            targetMenu.dataset.placement = below < height && bounds.top > height + 12
-                ? "above" : "below";
+            Controls.positionMenu(targetTrigger, targetMenu);
         }
         targetTrigger.setAttribute("aria-expanded", String(open));
         reveal(targetMenu, open, animate, "menu");
@@ -3558,38 +3286,30 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
         }
     }
 
+    /** @param {string} id @returns {void} */
+    function toggleTarget(id) {
+        ui.targetZones = ui.targetZones.includes(id)
+            ? ui.targetZones.filter(value => value !== id) : [...ui.targetZones, id];
+        renderTargets();
+        remember();
+    }
+
     targetTrigger.addEventListener("click", () => setTargetMenuOpen(!targetMenuOpen));
-    targetTrigger.addEventListener("keydown", event => {
-        if (!["ArrowDown", "ArrowUp"].includes(event.key)) return;
-        event.preventDefault();
-        setTargetMenuOpen(true, true);
+    Controls.bindMenuKeys(targetTrigger, targetMenu, {
+        choices: () => targetChoices,
+        open: () => setTargetMenuOpen(true, true),
+        close: focus => setTargetMenuOpen(false, focus),
+        select: option => {
+            const id = targetIds[targetChoices.indexOf(option)];
+            toggleTarget(id);
+        }
     });
     for (const [index, choice] of targetChoices.entries()) {
         choice.addEventListener("click", () => {
             const id = targetIds[index];
-            ui.targetZones = ui.targetZones.includes(id)
-                ? ui.targetZones.filter(value => value !== id) : [...ui.targetZones, id];
-            renderTargets();
-            remember();
+            toggleTarget(id);
         });
     }
-    targetMenu.addEventListener("keydown", event => {
-        if (["Escape", "Tab"].includes(event.key)) {
-            if (event.key === "Escape") event.preventDefault();
-            setTargetMenuOpen(false, true);
-            return;
-        }
-        if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
-        event.preventDefault();
-        let index = targetChoices.indexOf(document.activeElement);
-        if (event.key === "Home") index = 0;
-        if (event.key === "End") index = targetChoices.length - 1;
-        if (event.key === "ArrowDown") index = (index + 1) % targetChoices.length;
-        if (event.key === "ArrowUp") {
-            index = (index - 1 + targetChoices.length) % targetChoices.length;
-        }
-        targetChoices[index].focus();
-    });
 
     runSwitch.addEventListener("change", () => {
         ui.running = runSwitch.checked;
@@ -3621,33 +3341,15 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
     }
     strategy.addEventListener("change", () => selectStrategy(strategy.value));
     strategyTrigger.addEventListener("click", () => setMenuOpen(!menuOpen));
-    strategyTrigger.addEventListener("keydown", event => {
-        if (!["ArrowDown", "ArrowUp"].includes(event.key)) return;
-        event.preventDefault();
-        setMenuOpen(true, true);
+    Controls.bindMenuKeys(strategyTrigger, strategyMenu, {
+        choices: () => choices,
+        open: () => setMenuOpen(true, true),
+        close: focus => setMenuOpen(false, focus),
+        select: option => selectStrategy(option.dataset.strategy)
     });
     for (const choice of choices) {
         choice.addEventListener("click", () => selectStrategy(choice.dataset.strategy));
     }
-    strategyMenu.addEventListener("keydown", event => {
-        if (event.key === "Escape") {
-            event.preventDefault();
-            setMenuOpen(false, true);
-            return;
-        }
-        if (event.key === "Tab") {
-            setMenuOpen(false, true, false);
-            return;
-        }
-        if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
-        event.preventDefault();
-        let index = choices.indexOf(document.activeElement);
-        if (event.key === "Home") index = 0;
-        if (event.key === "End") index = choices.length - 1;
-        if (event.key === "ArrowDown") index = (index + 1) % choices.length;
-        if (event.key === "ArrowUp") index = (index - 1 + choices.length) % choices.length;
-        choices[index].focus();
-    });
     document.addEventListener("pointerdown", event => {
         if (menuOpen && !strategyWrap.contains(event.target)) setMenuOpen(false);
         if (targetMenuOpen && !targetMenu.contains(event.target)

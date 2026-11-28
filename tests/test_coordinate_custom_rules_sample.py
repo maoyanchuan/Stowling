@@ -369,7 +369,7 @@ def test_main_settings_stay_compact_and_aligned_in_both_themes(
     assert bounds is not None and bounds["x"] >= 0
     assert bounds["x"] + bounds["width"] <= width
     actions = group.locator(".category-option-actions").bounding_box()
-    standing = field(root, "standing-option-row").locator(
+    standing = root.locator(".category-standing-plan > .category-option-row").locator(
         ".category-option-actions",
     ).bounding_box()
     assert actions is not None and standing is not None
@@ -395,7 +395,7 @@ def test_recognition_disclosure_changes_visibility_without_disabling_rules(
     panel = field(root, "recognition-panel")
     toggle = field(root, "recognition-expand")
     assert panel.is_hidden()
-    assert panel.get_by_role("switch").count() == 3
+    assert panel.get_by_role("switch", include_hidden=True).count() == 3
     toggle.focus()
     toggle.press("Space")
     assert panel.is_visible()

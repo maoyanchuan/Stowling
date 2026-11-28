@@ -112,7 +112,12 @@ const window = {
 /** @param {string} id @returns {Element} */
 function node(id) {return nodes.get(`sample-${id}`);}
 /** @returns {void} */
-function load() {vm.runInNewContext(scripts.at(-1)[1], {document, window});}
+function load() {
+    const shared = require("node:path").resolve(require("node:path").dirname(process.argv[1]),
+        "shared/settings-controls.js");
+    vm.runInNewContext(fs.readFileSync(shared, "utf8"), {document, window});
+    vm.runInNewContext(scripts.at(-1)[1], {document, window});
+}
 Promise.resolve(eval(process.argv[2])).then(result => {
     process.stdout.write(JSON.stringify(result));
 });

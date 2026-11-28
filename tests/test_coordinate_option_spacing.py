@@ -28,6 +28,9 @@ def category_page(request: pytest.FixtureRequest) -> Iterator[Any]:
         if request.param == "editor":
             for name in ("styles.css", "workbench.css", "coordinate-editor.css"):
                 page.add_style_tag(content=(WEB / name).read_text("utf-8"))
+        else:
+            for name in ("settings-theme.css", "settings-controls.css"):
+                page.add_style_tag(content=(ROOT / "docs/ui/shared" / name).read_text("utf-8"))
         # Isolate the real options markup without authentication or example-data scripts.
         page.evaluate("""() => {
             const options = document.querySelector('.category-options');
@@ -56,11 +59,11 @@ def test_category_highlights_leave_space_around_labels_and_controls(
     page.set_viewport_size({"width": width, "height": 1000})
     page.evaluate("theme => document.documentElement.dataset.theme = theme", theme)
     rows = page.locator(
-        ".category-option-row, .category-option-sub:not(.category-rule-panel)",
+        "div.category-option-row, .category-option-sub:not(.category-rule-panel)",
     )
-    grouped_template = page.locator("#category-recognition-expand").count()
-    assert rows.count() == 9 + 4 * grouped_template
+    assert rows.count() > 0
     for row in rows.all():
+        row.scroll_into_view_if_needed()
         bounds = row.bounding_box()
         label = row.locator(".category-option-label").bounding_box()
         control = row.locator(

@@ -22,6 +22,11 @@
             else draft.appliedCells = cells;
             update(false);
         });
+        const classic = window.StowlingClassicSlice.create(root, positions => {
+            if (draft.previewRegion) draft.previewPieces = positions;
+            else draft.appliedPieces = positions;
+            update(false);
+        });
         content.append(root.querySelector(".category-options"),
             root.querySelector(".category-binding-section"));
         let draft = {mode: "manual", previewRegion: null, appliedRegion: null, expanded: false};
@@ -72,6 +77,9 @@
             helpers.reveal(preview, Boolean(draft.previewRegion), animate);
             helpers.reveal(details, showDetails, animate);
             const mapRegion = draft.previewRegion || draft.appliedRegion;
+            classic.render(Boolean(scanning && mapRegion), draft.previewRegion
+                ? draft.previewPieces : draft.appliedPieces,
+                regionKey(mapRegion) !== regionKey(region), Boolean(draft.previewRegion));
             if (mapRegion) {
                 const stage = regionKey(mapRegion) !== regionKey(region) ? "stale"
                     : draft.previewRegion ? "pending" : "applied";
@@ -108,6 +116,7 @@
         function generatePreview() {
             const region = currentRegion();
             if (!region) return;
+            draft.previewPieces = {};
             draft.previewRegion = structuredClone(region);
             draft.previewCells = {};
             map.reset();
@@ -120,6 +129,8 @@
                     || regionKey(draft.previewRegion) !== regionKey(currentRegion())) return;
             helpers.applyExample(draft.previewRegion);
             draft.appliedRegion = structuredClone(draft.previewRegion);
+            draft.appliedPieces = structuredClone(draft.previewPieces || {});
+            draft.previewPieces = {};
             draft.appliedCells = structuredClone(draft.previewCells || {});
             draft.previewRegion = null;
             draft.previewCells = {};
@@ -147,6 +158,7 @@
         apply.addEventListener("click", applyPreview);
         discard.addEventListener("click", () => {
             draft.previewRegion = null;
+            draft.previewPieces = {};
             draft.previewCells = {};
             map.reset();
             update();

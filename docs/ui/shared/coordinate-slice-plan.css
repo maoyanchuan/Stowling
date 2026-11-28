@@ -29,11 +29,38 @@
     font-size: 12px;
 }
 
-.classic-slice img {
+.classic-board svg {
     display: block;
-    width: min(94%, 510px);
+    width: min(100%, 580px);
     height: auto;
-    margin: clamp(12px, 2vw, 24px) auto;
+    margin: 14px auto;
+    background: #283433;
+    border: 1px solid #526360;
+    box-sizing: border-box;
+    user-select: none;
+}
+
+.classic-board [data-piece] {
+    cursor: grab;
+    touch-action: none;
+    outline: none;
+}
+
+.classic-board [aria-disabled="true"] { cursor: default; }
+.classic-board .moving { opacity: .8; }
+.classic-board .piece-hit { fill: transparent; }
+
+.classic-board [data-piece]:focus-visible .piece-hit {
+    stroke: #d8f4dc;
+    stroke-width: 2px;
+}
+
+.classic-hint {
+    margin: 0;
+    padding: 10px 16px;
+    color: #dbe6df;
+    background: #263130;
+    font-size: 12px;
 }
 
 .slice-plan .slice-draft-content {

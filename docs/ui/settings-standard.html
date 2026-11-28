@@ -25,10 +25,55 @@
     <script src="shared/settings-controls.js"></script>
     <script src="shared/template-tabs.js" defer></script>
     <script src="shared/task-console-template.js" defer></script>
+    <script src="shared/classic-slice.js"></script>
     <script src="shared/coordinate-slice-plan.js"></script>
     <script src="shared/coordinate-scan-template.js"></script>
 </head>
 <body data-active-template="task">
+<template id="classic-slice-art">
+    <svg xmlns="http://www.w3.org/2000/svg">
+    <defs>
+        <linearGradient id="wood" x2="0" y2="1" gradientUnits="objectBoundingBox">
+            <stop stop-color="#dfab58"/>
+            <stop offset="1" stop-color="#aa6c31"/>
+        </linearGradient>
+        <linearGradient id="pane" x2="1" y2="1">
+            <stop stop-color="#8dbdbe" stop-opacity=".36"/>
+            <stop offset=".55" stop-color="#67a3a9" stop-opacity=".12"/>
+            <stop offset="1" stop-color="#bce3e0" stop-opacity=".30"/>
+        </linearGradient>
+        <g id="chest" shape-rendering="crispEdges">
+            <path fill="#34291e" d="M0 1h48v23H0z"/>
+            <path fill="url(#wood)" d="M2 3h44v18H2z"/>
+            <path fill="#efc078" d="M3 3h42v2H3z"/>
+            <path fill="#80532d" d="M2 9h44v3H2zM3 20h42v2H3z"/>
+            <path fill="#c58a45" d="M5 14h12v1H5zM30 16h10v1H30zM8 6h9v1H8z"/>
+            <path fill="#493e34" d="M21 8h6v8h-6z"/>
+            <path fill="#d9dacf" d="M22 8h4v6h-4z"/>
+            <path fill="#fff1cc" d="M22 8h3v2h-3z"/>
+        </g>
+        <g id="checker" shape-rendering="crispEdges">
+            <path fill="#1e1924" d="M0 0h26v26H0z"/>
+            <path fill="#cf46ce" d="M1 1h12v12H1zM13 13h12v12H13z"/>
+            <path fill="#e67ee4" d="M1 1h12v2H1zM13 13h12v2H13z"/>
+        </g>
+        <g id="glass">
+            <rect x="1" y="1" width="24" height="24" fill="url(#pane)"
+                  stroke="#b4dcdb" stroke-width="2"/>
+            <path stroke="#d9f3ed" opacity=".72" d="m4 10 5-5m10 16 3-3"/>
+        </g>
+        <g id="low" shape-rendering="crispEdges">
+            <path fill="#543a2c" d="M0 0h24v13H0z"/>
+            <path fill="#ba8157" d="M1 5h22v6H1z"/>
+            <path fill="#f2e5ce" d="M1 1h22v4h-3v2h-5V5h-5v2H6V5H1z"/>
+        </g>
+        <pattern id="block-grid" width="26" height="26" patternUnits="userSpaceOnUse">
+            <path d="M26 0H0V26" fill="none" stroke="#526360" stroke-width="1"/>
+        </pattern>
+    </defs>
+    <rect width="100%" height="100%" fill="url(#block-grid)"/>
+    </svg>
+</template>
 <header class="page-header">
         <div class="page-brand">
             <img alt="" width="36" height="36" src="data:image/png;base64,
@@ -3028,15 +3073,6 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
                                     </fieldset>
                                     <div id="category-scan-panel" hidden>
                                         <div class="category-scan-content">
-                                            <figure class="classic-slice">
-                                                <figcaption>
-                                                    <strong>经典单片结构</strong>
-                                                    <span>侧视示意图</span>
-                                                </figcaption>
-                                                <img src="shared/classic-slice.svg"
-                                                     width="372" height="234"
-                                                     alt="左右各五个错层木箱与紫黑方块，底部中央为三格玻璃">
-                                            </figure>
                                             <div class="category-binding-heading">
                                                 <span class="category-rule-help">离线 UI 示例</span>
                                                 <button id="category-scan-start" type="button"
@@ -3044,6 +3080,14 @@ eHX1/P0n/8GJTpSg/wEAAP//qggfMQAAAAZJREFUAwC3RwRKsXfrggAAAABJRU5ErkJggg==
                                             </div>
                                             <p id="category-scan-status" class="category-scan-status"
                                                role="status" aria-live="polite"></p>
+                                            <figure class="classic-slice" hidden>
+                                                <figcaption>
+                                                    <strong>经典单片结构</strong>
+                                                    <span class="classic-stage"></span>
+                                                </figcaption>
+                                                <div class="classic-board"></div>
+                                                <p class="classic-hint" role="status"></p>
+                                            </figure>
                                             <section id="category-scan-map" hidden></section>
                                             <div id="category-scan-preview" hidden>
                                                 <div class="category-scan-preview-content">

@@ -43,9 +43,9 @@ def test_pre_scanned_location_opens_with_a_complete_offline_snapshot(scan_page: 
     assert page.locator("#category-scan-map").is_visible()
     assert page.locator("#category-scan-map").get_attribute("data-stage") == "applied"
     assert page.locator("#category-scan-preview").is_hidden()
-    figure = page.locator(".classic-slice img")
+    figure = page.locator(".classic-board svg")
     assert figure.is_visible()
-    assert figure.evaluate("img => img.complete && img.naturalWidth > 0")
+    assert figure.locator("[data-piece]").count() == 25
     assert page.locator(".slice-tools").is_hidden()
     page.get_by_role("button", name="展开坐标草稿").click()
     assert page.locator(".slice-cell").count() == 60
@@ -337,3 +337,39 @@ def test_editor_keyboard_activation_paints_but_arrow_keys_only_select(scan_page:
     page.locator('[data-tool="view"]').click()
     target.click()
     assert target.get_attribute("data-roles") == "standing"
+
+
+def test_classic_layout_drags_snaps_and_keeps_applied_snapshot(scan_page: Any) -> None:
+    page = scan_page
+    choose_mode(page, "scan")
+    figure = page.locator(".classic-slice")
+    assert figure.is_hidden()
+    page.locator("#category-scan-start").click()
+    chest = figure.locator('[data-piece^="chest"]').first
+    original = chest.get_attribute("transform")
+    chest.scroll_into_view_if_needed()
+    hit = chest.locator("rect").bounding_box()
+    assert hit is not None
+    cell = hit["height"]
+    x, y = hit["x"] + cell, hit["y"] + cell / 2
+    page.mouse.move(x, y)
+    page.mouse.down()
+    page.mouse.move(x, y + cell * 1.2)
+    page.mouse.up()
+    moved = chest.get_attribute("transform")
+    assert moved == "translate(130 52)"
+    page.locator("#category-scan-apply").click()
+    page.locator("#category-scan-start").click()
+    assert chest.get_attribute("transform") == original
+    page.locator("#category-scan-discard").click()
+    assert chest.get_attribute("transform") == moved
+    page.locator("#save-coordinate").click()
+    page.locator("#duplicate-coordinate").click()
+    chest.press("ArrowDown")
+    assert chest.get_attribute("transform") != moved
+    page.locator('[data-coordinate-id="custom-rules-demo"]').click()
+    assert chest.get_attribute("transform") == moved
+    page.locator("#category-overall-first-y").fill("-46")
+    assert chest.get_attribute("aria-disabled") == "true"
+    chest.dispatch_event("keydown", {"key": "ArrowDown"})
+    assert chest.get_attribute("transform") == moved

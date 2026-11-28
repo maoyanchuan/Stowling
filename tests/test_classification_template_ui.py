@@ -18,7 +18,7 @@ def test_merged_standing_has_no_experimental_controls_or_badges(classification_p
             window.StowlingTaskDebugMode = {enabled: () => shown};
             document.dispatchEvent(new CustomEvent('stowling:task-debug-mode-changed'));
         }""", shown)
-        assert page.locator("#auto-experiments-settings").is_hidden()
+        assert page.locator("#auto-experiments-settings").is_hidden() is not shown
         assert page.locator("#auto-standing-subregions").count() == 0
         assert page.locator("#auto-standing-active").count() == 0
 
@@ -40,8 +40,8 @@ def test_continuous_access_baseline_has_no_switch_badge_or_empty_menu(
             window.StowlingTaskDebugMode = {enabled: () => shown};
             document.dispatchEvent(new CustomEvent('stowling:task-debug-mode-changed'));
         }""", shown)
-        assert page.locator("#auto-experiments-settings").is_hidden()
-        assert page.locator("#auto-experiments-settings").evaluate("el => el.inert")
+        assert page.locator("#auto-experiments-settings").is_hidden() is not shown
+        assert page.locator("#auto-experiments-settings").evaluate("el => el.inert") is not shown
         assert page.locator("#auto-continuous-container-access").count() == 0
         assert "classification-continuous-container-access" not in page.locator(
             "#auto-task-list"
@@ -160,6 +160,53 @@ def set_robot_warehouse(page: Any, enabled: bool) -> None:
 
 
 @pytest.mark.parametrize("theme,width", [("green", 1000), ("gray", 1000), ("green", 390)])
+def test_standing_range_switch_saves_and_remains_observable_when_debug_is_hidden(
+    classification_page: Any, theme: str, width: int,
+) -> None:
+    page = classification_page
+    page.set_viewport_size({"width": width, "height": 1000})
+    page.evaluate("theme => document.documentElement.dataset.theme = theme", theme)
+    open_settings(page)
+    toggle = page.locator("#auto-standing-range")
+    menu = page.locator("#auto-experiments-settings")
+    assert menu.is_hidden() and not toggle.is_checked()
+    page.evaluate("""() => {
+        window.StowlingTaskDebugMode = {enabled: () => true};
+        document.dispatchEvent(new Event('stowling:task-debug-mode-changed'));
+    }""")
+    assert menu.is_visible()
+    assert page.locator("#auto-experiments-toggle").get_attribute("aria-expanded") == "false"
+    page.locator("#auto-experiments-toggle").click()
+    settle(page)
+    toggle.check()
+    page.wait_for_function("backend.item.standingRangeEnabled === true")
+    page.locator("#auto-experiments-toggle").click()
+    settle(page)
+    assert toggle.is_checked() and toggle.is_hidden()
+    page.evaluate("""() => {
+        window.StowlingTaskDebugMode = {enabled: () => false};
+        document.dispatchEvent(new Event('stowling:task-debug-mode-changed'));
+    }""")
+    assert menu.is_hidden() and menu.evaluate("el => el.inert")
+    assert page.locator("#auto-standing-range-active").is_visible()
+    assert "classification-standing-range" in page.locator("#auto-task-list").inner_text()
+    assert not page.locator("#auto-task-list .pickup-task-header").get_by_role(
+        "switch"
+    ).is_checked()
+    page.locator("#auto-task-list .pickup-task-expand").click()
+    settle(page)
+    assert "classification-standing-range" in page.locator(".auto-standing-range-badge").inner_text()
+    title = page.locator("#auto-task-list .pickup-task-title").bounding_box()
+    assert title is not None and title["height"] < 60
+    page.locator("#refresh-move-tasks").click()
+    page.wait_for_function("!document.querySelector('#refresh-move-tasks').disabled")
+    open_settings(page)
+    assert toggle.is_checked() and menu.is_hidden()
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    assert page.evaluate("backend.errors") == []
+
+
+@pytest.mark.parametrize("theme,width", [("green", 1000), ("gray", 1000), ("green", 390)])
 def test_total_overflow_packing_is_regular_and_keeps_saved_values(
     classification_page: Any, theme: str, width: int,
 ) -> None:
@@ -177,7 +224,7 @@ def test_total_overflow_packing_is_regular_and_keeps_saved_values(
         window.StowlingTaskDebugMode = {enabled: () => true};
         document.dispatchEvent(new Event('stowling:task-debug-mode-changed'));
     }""")
-    assert menu.is_hidden() and menu.evaluate("node => node.inert")
+    assert menu.is_visible() and not menu.evaluate("node => node.inert")
     page.locator("#auto-overflow-toggle").press("Space")
     settle(page)
     assert toggle.is_hidden() and toggle.is_disabled()

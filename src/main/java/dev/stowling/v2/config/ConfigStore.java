@@ -319,6 +319,7 @@ public final class ConfigStore {
         allowed.add("cachePolicy");
         allowed.add("remainderPolicy");
         allowed.add("robotWarehouseMixedBoxes");
+        allowed.add("standingRangeEnabled");
         JsonArray definitions = requireArray(value, "autoClassifyTasks");
         for (int index = 0; index < definitions.size(); index++) {
             String path = "autoClassifyTasks[" + index + "]";
@@ -335,6 +336,12 @@ public final class ConfigStore {
             }
 
             requireFields(definition, path, allowed, fields);
+            var standingRange = definition.get("standingRangeEnabled");
+            if (standingRange != null && !standingRange.isJsonNull()
+                    && (!standingRange.isJsonPrimitive()
+                    || !standingRange.getAsJsonPrimitive().isBoolean())) {
+                throw new V2ValidationException("standingRangeEnabled 必须是布尔值");
+            }
             var mixed = definition.get("robotWarehouseMixedBoxes");
             if (mixed != null && (!mixed.isJsonPrimitive()
                     || !mixed.getAsJsonPrimitive().isBoolean())) {

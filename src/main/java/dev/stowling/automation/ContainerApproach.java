@@ -13,6 +13,7 @@ public final class ContainerApproach {
     private final boolean multipleEntrances;
     private final boolean avoidPickups;
     private final boolean reusePosition;
+    private final boolean standingRangeEnabled;
     private BlockPosition navigating;
     private BlockPosition reached;
 
@@ -28,12 +29,19 @@ public final class ContainerApproach {
 
     public ContainerApproach(NavigationPort navigation, AreaBounds standingArea,
             Collection<BlockPosition> entrances, boolean avoidPickups, boolean reusePosition) {
+        this(navigation, standingArea, entrances, avoidPickups, reusePosition, false);
+    }
+
+    public ContainerApproach(NavigationPort navigation, AreaBounds standingArea,
+            Collection<BlockPosition> entrances, boolean avoidPickups, boolean reusePosition,
+            boolean standingRangeEnabled) {
         this.navigation = navigation;
         this.standingArea = standingArea;
         this.entrances = new ArrayDeque<>(entrances);
         multipleEntrances = entrances.size() > 1;
         this.avoidPickups = avoidPickups;
         this.reusePosition = reusePosition;
+        this.standingRangeEnabled = standingRangeEnabled && standingArea != null;
     }
 
     public NavigationStatus tick() {
@@ -49,7 +57,8 @@ public final class ContainerApproach {
         }
         if (multipleEntrances) {
             for (BlockPosition entrance : entrances) {
-                if (navigation.isWithinInteractionRange(entrance, standingArea, avoidPickups)) {
+                if (navigation.isWithinInteractionRange(entrance, standingArea, avoidPickups,
+                        standingRangeEnabled)) {
                     cancel();
                     reached = entrance;
                     return NavigationStatus.ARRIVED;
@@ -59,7 +68,8 @@ public final class ContainerApproach {
         while (!entrances.isEmpty()) {
             BlockPosition entrance = entrances.getFirst();
             NavigationStatus status = navigating == null
-                    ? navigation.startInteraction(entrance, standingArea, avoidPickups)
+                    ? navigation.startInteraction(entrance, standingArea, avoidPickups,
+                            standingRangeEnabled)
                     : navigation.status(entrance, null);
             if (status == NavigationStatus.NAVIGATING) {
                 navigating = entrance;
@@ -67,7 +77,8 @@ public final class ContainerApproach {
             }
             navigating = null;
             if (status == NavigationStatus.ARRIVED && (standingArea == null && !multipleEntrances
-                    || navigation.isWithinInteractionRange(entrance, standingArea, avoidPickups))) {
+                    || navigation.isWithinInteractionRange(entrance, standingArea, avoidPickups,
+                            standingRangeEnabled))) {
                 reached = entrance;
                 return status;
             }

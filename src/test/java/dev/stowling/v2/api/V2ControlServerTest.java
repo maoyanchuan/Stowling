@@ -74,6 +74,7 @@ class V2ControlServerTest {
                     .getAsJsonObject().get("ruleId").getAsString());
             var task = new JsonObject();
             task.addProperty("name", "Equipment sorting");
+            task.addProperty("standingRangeEnabled", true);
             task.addProperty("kind", "CLASSIFICATION");
             task.addProperty("cacheLocationRef", "region:" + source.id());
             task.addProperty("collectionPriority", "NORMAL");
@@ -85,6 +86,9 @@ class V2ControlServerTest {
             var saved = fixture.send("/v1/auto-classify-tasks", "POST", task.toString(), true);
             assertEquals(201, saved.statusCode());
             var item = object(saved).getAsJsonObject("item");
+            assertTrue(item.get("standingRangeEnabled").getAsBoolean());
+            assertTrue(new ConfigStore(file).read().config().autoClassifyTasks()
+                    .getFirst().standingRangeEnabled());
             assertFalse(item.has("unstackableZoneRoutingEnabled"));
             assertFalse(item.has("foodPauseResumeEnabled"));
             assertFalse(item.has("continuousContainerAccessEnabled"));
@@ -98,6 +102,18 @@ class V2ControlServerTest {
             assertEquals(200, updated.statusCode());
             assertFalse(object(updated).getAsJsonObject("item")
                     .has("continuousContainerAccessEnabled"));
+            assertTrue(object(updated).getAsJsonObject("item")
+                    .get("standingRangeEnabled").getAsBoolean());
+            patch.add("revision", object(updated).get("revision"));
+            patch.addProperty("standingRangeEnabled", false);
+            assertEquals(401, fixture.send(taskPath, "PUT", patch.toString(), false)
+                    .statusCode());
+            var disabled = fixture.send(taskPath, "PUT", patch.toString(), true);
+            assertEquals(200, disabled.statusCode());
+            assertFalse(object(disabled).getAsJsonObject("item")
+                    .get("standingRangeEnabled").getAsBoolean());
+            assertFalse(new ConfigStore(file).read().config().autoClassifyTasks()
+                    .getFirst().standingRangeEnabled());
             for (boolean retired : List.of(false, true)) {
                 task.addProperty("continuousContainerAccessEnabled", retired);
                 assertEquals(400, fixture.send("/v1/auto-classify-tasks", "POST",

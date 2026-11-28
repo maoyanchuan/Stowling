@@ -329,7 +329,7 @@ final class MinecraftContainerCacheRefresh implements TaskModuleExecutor {
                 break;
             }
         }
-        containers.addLast(target);
+        containers.addLast(target.withStandingRange(context.workspace().standingRangeEnabled()));
     }
 
     private TaskModuleResult openNext() {

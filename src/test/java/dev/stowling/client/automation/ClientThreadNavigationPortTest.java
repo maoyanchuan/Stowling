@@ -13,6 +13,23 @@ import org.junit.jupiter.api.Test;
 
 class ClientThreadNavigationPortTest {
     @Test
+    void rangePolicyIsForwardedOnlyOnTheClientThread() {
+        var target = new BlockPosition(216, -23, -51);
+        var area = new dev.stowling.v2.model.AreaBounds(220, -24, -51, 220, -24, -51);
+        var delegate = new RecordingNavigationPort();
+        var offThread = new ClientThreadNavigationPort(delegate, new TestScheduler(false));
+        assertEquals(NavigationStatus.FAILED,
+                offThread.startInteraction(target, area, true, true));
+        assertEquals(false, offThread.isWithinInteractionRange(target, area, true, true));
+        assertEquals(0, delegate.rangeCalls);
+        var onThread = new ClientThreadNavigationPort(delegate, new TestScheduler(true));
+        assertEquals(NavigationStatus.NAVIGATING,
+                onThread.startInteraction(target, area, true, true));
+        assertEquals(true, onThread.isWithinInteractionRange(target, area, true, true));
+        assertEquals(2, delegate.rangeCalls);
+    }
+
+    @Test
     void forwardsWithinRadiusOnClientThread() {
         RecordingNavigationPort delegate = new RecordingNavigationPort();
         ClientThreadNavigationPort port = new ClientThreadNavigationPort(
@@ -46,8 +63,25 @@ class ClientThreadNavigationPortTest {
     }
 
     private static final class RecordingNavigationPort implements NavigationPort {
+        private int rangeCalls;
         private BlockPosition coordinateTarget;
         private int coordinateRadius = -1;
+
+        @Override
+        public NavigationStatus startInteraction(BlockPosition target,
+                dev.stowling.v2.model.AreaBounds area, boolean avoidPickups, boolean rangeEnabled) {
+            assertEquals(true, rangeEnabled);
+            rangeCalls++;
+            return NavigationStatus.NAVIGATING;
+        }
+
+        @Override
+        public boolean isWithinInteractionRange(BlockPosition target,
+                dev.stowling.v2.model.AreaBounds area, boolean avoidPickups, boolean rangeEnabled) {
+            assertEquals(true, rangeEnabled);
+            rangeCalls++;
+            return true;
+        }
 
         @Override
         public NavigationStatus start(BlockPosition target) {

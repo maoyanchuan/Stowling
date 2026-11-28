@@ -1102,6 +1102,11 @@
                                             </div>
                                         </section>
                                         <div id="auto-cleanup-settings"></div>
+                                        <p id="auto-standing-range-active"
+                                           class="auto-config-note" role="status" hidden>
+                                            已启用：分类站位范围判定与落稳开箱
+                                            （classification-standing-range）
+                                        </p>
                                         <section id="auto-experiments-settings"
                                                  class="auto-config-section"
                                                  aria-labelledby="auto-experiments-title"
@@ -1125,6 +1130,19 @@
                                             </div>
                                             <div id="auto-experiments-body"
                                                  class="auto-phase-body" hidden>
+                                                <label id="auto-standing-range-row"
+                                                       class="settings-row" hidden inert>
+                                                    <span class="settings-copy">
+                                                        <strong>分类站位：范围判定与落稳开箱</strong>
+                                                        <small class="settings-description">
+                                                            默认关闭。适配箱顶、半砖、地毯等站位，
+                                                            落稳且够得到箱子后再开箱。
+                                                        </small>
+                                                    </span>
+                                                    <input id="auto-standing-range"
+                                                           class="settings-switch"
+                                                           type="checkbox" role="switch">
+                                                </label>
                                                 <section class="auto-config-section
                                                                 auto-cache-submenu"
                                                          aria-labelledby="auto-packing-title">

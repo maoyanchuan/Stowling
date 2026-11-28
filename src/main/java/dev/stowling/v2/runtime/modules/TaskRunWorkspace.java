@@ -19,6 +19,7 @@ import java.util.UUID;
 
 public final class TaskRunWorkspace {
     private boolean classificationTask;
+    private boolean standingRangeEnabled;
     private boolean classificationDeliveryActive;
 
     private Set<String> classificationDemand = Set.of();
@@ -28,6 +29,14 @@ public final class TaskRunWorkspace {
     /** Identifies an independent classification run, never a persisted execution switch. */
     public synchronized void configureClassificationTask(boolean classification) {
         classificationTask = classification;
+    }
+
+    public synchronized void configureStandingRange(boolean enabled) {
+        standingRangeEnabled = classificationTask && enabled;
+    }
+
+    public synchronized boolean standingRangeEnabled() {
+        return classificationTask && standingRangeEnabled;
     }
 
     public synchronized boolean classificationTask() {

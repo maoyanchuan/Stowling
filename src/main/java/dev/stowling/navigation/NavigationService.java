@@ -29,6 +29,15 @@ public interface NavigationService {
         return Optional.empty();
     }
 
+    default boolean navigateToStandingRange(BlockPosition target, AreaBounds area,
+            Set<BlockPosition> rejectedStances, boolean avoidPickups) {
+        return false;
+    }
+
+    default boolean isWithinStandingRange(AreaBounds area) {
+        return false;
+    }
+
     default void navigateToWithinRadius(BlockPosition target, int radius) {
         Objects.requireNonNull(target, "target");
         if (radius < 0) {

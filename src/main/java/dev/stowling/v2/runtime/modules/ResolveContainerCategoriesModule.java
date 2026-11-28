@@ -104,6 +104,14 @@ final class ResolveContainerCategoriesModule implements TaskModuleExecutor {
                 .anyMatch(UnstackableCategoryRule::isLayoutCategory)) {
             result = expandUnstackableCategories(result, cacheScan);
         }
+        if (context.workspace().standingRangeEnabled()) {
+            Map<String, List<ContainerTarget>> scoped = new LinkedHashMap<>();
+            result.categories().forEach((key, values) -> scoped.put(key, values.stream()
+                    .map(target -> target.withStandingRange(true)).toList()));
+            result = CategoryZoneResult.success(scoped, result.layout().stream().map(entry ->
+                    new ClassificationLayoutEntry(entry.itemId(), entry.containers().stream()
+                            .map(target -> target.withStandingRange(true)).toList())).toList());
+        }
         Map<ContainerTarget, Set<String>> accepted = new LinkedHashMap<>();
         List<ContainerTarget> targets = new ArrayList<>();
         for (Map.Entry<String, List<ContainerTarget>> entry

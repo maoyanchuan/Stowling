@@ -78,6 +78,12 @@ body[data-page="tasks"] .pickup-task-module::before {
     color: var(--warning);
 }
 
+body[data-page] .pickup-task-module > .auto-standing-range-badge {
+    margin: 0;
+    padding: 10px var(--pickup-padding);
+    overflow-wrap: anywhere;
+}
+
 :is(.coordinate-task-form, .auto-eat-task-form, .refresh-cache-task-form) {
     min-width: 0;
     margin: 0;

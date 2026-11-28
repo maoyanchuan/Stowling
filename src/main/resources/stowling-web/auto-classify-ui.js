@@ -86,6 +86,9 @@
         warehouseEnabled: document.querySelector("#robot-warehouse-enabled"),
         warehouse: document.querySelector("#robot-warehouse-location"),
         warehouseMixed: document.querySelector("#robot-warehouse-mixed-boxes"),
+        standingRange: document.querySelector("#auto-standing-range"),
+        standingRangeRow: document.querySelector("#auto-standing-range-row"),
+        standingRangeActive: document.querySelector("#auto-standing-range-active"),
         experimentsRoot: document.querySelector("#auto-experiments-settings"),
         experimentsHeader: document.querySelector("#auto-experiments-toggle"),
         experimentsBody: document.querySelector("#auto-experiments-body"),
@@ -249,6 +252,7 @@
         elements.cacheMode.value = draft.cachePolicy.mode;
         elements.cacheThreshold.value = draft.cachePolicy.thresholdPercent;
         elements.cacheEnabled.checked = draft.cachePolicy.enabled;
+        elements.standingRange.checked = draft.standingRangeEnabled === true;
         populateSelect(elements.point, state.resources.coordinates, draft.coordinateId,
             "请选择坐标页面的检测点");
         Picker.group(elements.point, "coordinate");
@@ -317,6 +321,7 @@
             overflowEnabled: kind !== "PICKUP" && elements.warehouseEnabled.checked,
             overflowDestinationRef: elements.warehouse.value,
             robotWarehouseMixedBoxes: elements.warehouseMixed.checked,
+            standingRangeEnabled: kind === "CLASSIFICATION" && elements.standingRange.checked,
             remainderPolicy: {
                 ...(remainderSettings?.read() || state.draft.remainderPolicy),
                 overflowPackingEnabled: elements.overflowPacking.checked
@@ -409,6 +414,11 @@
             });
             header.append(row.listening);
             card.append(header, body);
+            if (classification && item.standingRangeEnabled === true) {
+                const badge = Stowling.element("p", "auto-config-note auto-standing-range-badge",
+                    "已启用：classification-standing-range（分类站位落稳）");
+                header.after(badge);
+            }
             if (standard) card.append(status);
             elements.list.append(card);
             rows.set(item.id, row);
@@ -459,8 +469,12 @@
         const packing = elements.cacheEnabled.closest("section");
         packing.hidden = classification;
         packing.inert = classification;
-        elements.experimentsRoot.hidden = classification || !showExperiments;
-        elements.experimentsRoot.inert = classification || !showExperiments;
+        elements.experimentsRoot.hidden = !showExperiments;
+        elements.experimentsRoot.inert = !showExperiments;
+        elements.standingRangeRow.hidden = !classification;
+        elements.standingRangeRow.inert = !classification;
+        elements.standingRangeActive.hidden = !classification
+            || !elements.standingRange.checked;
         const overflowPackingRow = elements.overflowPacking.closest("label");
         overflowPackingRow.hidden = !classification;
         overflowPackingRow.inert = !classification;
@@ -581,6 +595,9 @@
         if (!classification && elements.cacheEnabled.checked) {
             activeExperiments.push("打包缓存（cachePolicy.enabled）");
         }
+        if (classification && elements.standingRange.checked) {
+            activeExperiments.push("分类站位落稳（classification-standing-range）");
+        }
         elements.experimentsSummary.textContent = activeExperiments.length
             ? `已开启 ${activeExperiments.length} 项` : "未启用实验性设置";
         elements.experimentsHeader.title = activeExperiments.join("；");
@@ -630,8 +647,7 @@
      */
     function phaseEnabled(phase) {
         if (phase === "experiments") {
-            return state.draft.kind !== "CLASSIFICATION"
-                && window.StowlingTaskDebugMode?.enabled() === true;
+            return window.StowlingTaskDebugMode?.enabled() === true;
         }
         if (phase === "pickup") return elements.collectEnabled.checked;
         if (phase === "packing") return elements.cacheEnabled.checked;

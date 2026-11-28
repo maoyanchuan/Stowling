@@ -365,8 +365,10 @@ class MinecraftContainerCacheRefreshTest {
         assertEquals(List.of(FIRST, BLOCKED, LAST), inspection.session.opened);
     }
 
-    @Test
-    void classificationMarkerRefreshUsesBaselineStancesAndOrdinaryRefreshRemainsIsolated() {
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void classificationMarkerRefreshUsesBaselineStancesAndOrdinaryRefreshRemainsIsolated(
+            boolean rangeEnabled) {
         for (boolean enabled : List.of(false, true)) {
             var world = new World();
             world.loadAll = true;
@@ -384,6 +386,7 @@ class MinecraftContainerCacheRefreshTest {
             var ports = TaskModuleRuntimeRegistry.unavailablePorts(world);
             var workspace = new TaskRunWorkspace();
             workspace.configureClassificationTask(enabled);
+            workspace.configureStandingRange(rangeEnabled);
             var context = new TaskExecutionContext(world, ports.droppedItems(),
                     ports.containerRegions(), ports.containerTransfers(), ports.containerWithdrawals(),
                     inspection, new MarkerCache(), ports.categoryZones(), Map.of(), Map.of(),
@@ -394,6 +397,8 @@ class MinecraftContainerCacheRefreshTest {
             refresh.start();
             assertEquals(TaskModuleState.SUCCEEDED, finish(refresh).state());
             assertEquals(enabled ? STANDING : null, inspection.targets.getFirst().standingArea());
+            assertEquals(enabled && rangeEnabled,
+                    inspection.targets.getFirst().standingRangeEnabled());
         }
     }
 

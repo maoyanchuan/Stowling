@@ -3,6 +3,10 @@
 记录日期：2026 年 11 月 25 日。
 流程标识：`classification-baseline`。适用范围：独立分类任务的一轮执行。
 
+当前待验证实验：
+[分类指定站位的范围判定与落稳开箱](classification-standing-range.md)，
+标识 `classification-standing-range`，默认关闭；不改变下文已确认的主流程。
+
 ## 已并入主流程：扫描与存取连续访问
 
 - 标识：`classification-continuous-container-access`；状态：**已并入主流程**。
